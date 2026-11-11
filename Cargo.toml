@@ -1,0 +1,11 @@
+[package]
+name = "amber"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+license-file = "LICENSE"
+description = "Корвин: Путь к Амберу — 3D-платформер-головоломка"
+
+[dependencies]
+bfge = { package = "BFGE", git = "https://github.com/BFGEG/BFGE.git", rev = "774de07e636c2529f03016bc9191abf281f072bd" }
