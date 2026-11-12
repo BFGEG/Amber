@@ -15,7 +15,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
         ground,
         Transform {
             translation: Vec3::new(0.0, -0.25, 0.0),
-            scale: Vec3::new(12.0, 0.5, 9.0),
+            scale: Vec3::new(20.0, 0.5, 16.0),
             ..Transform::default()
         },
     )?;
@@ -46,8 +46,8 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     }
 
     engine.scene().set_viewpoint(ViewpointState {
-        position: Vec3::new(10.0, 10.0, 16.0),
-        direction: Vec3::new(-10.0, -9.5, -16.0),
+        position: Vec3::new(8.0, 8.0, 13.0),
+        direction: Vec3::new(-8.0, -7.5, -13.0),
         fov_y: 55.0_f32.to_radians(),
     })?;
     engine.scene().set_lighting(SceneLighting {
