@@ -14,8 +14,8 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     engine.scene().set_node_transform(
         ground,
         Transform {
-            translation: Vec3::new(0.0, -0.25, 0.0),
-            scale: Vec3::new(20.0, 0.5, 16.0),
+            translation: Vec3::new(40.0, -0.25, 0.0),
+            scale: Vec3::new(160.0, 0.5, 100.0),
             ..Transform::default()
         },
     )?;
@@ -25,11 +25,11 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     // Маркер Корвина и пять платформ имеют общий меш, но разные размеры и цвета.
     let blocks = [
         ([-4.0, 0.75, 2.0], [0.7, 1.5, 0.7], [0.85, 0.2, 0.12]),
-        ([-2.5, 0.25, 0.0], [1.4, 0.5, 1.4], [0.65, 0.45, 0.17]),
-        ([-0.5, 0.5, -0.3], [1.4, 1.0, 1.4], [0.65, 0.45, 0.17]),
-        ([1.5, 0.75, -0.6], [1.4, 1.5, 1.4], [0.65, 0.45, 0.17]),
-        ([3.5, 1.0, -0.9], [1.4, 2.0, 1.4], [0.65, 0.45, 0.17]),
-        ([4.5, 1.25, -2.8], [1.4, 2.5, 1.4], [0.65, 0.45, 0.17]),
+        ([-0.5, 0.25, -1.0], [1.4, 0.5, 1.4], [0.65, 0.45, 0.17]),
+        ([1.5, 0.5, 2.5], [1.4, 1.0, 1.4], [0.65, 0.45, 0.17]),
+        ([4.0, 0.75, -1.5], [1.4, 1.5, 1.4], [0.65, 0.45, 0.17]),
+        ([6.0, 1.0, 2.5], [1.4, 2.0, 1.4], [0.65, 0.45, 0.17]),
+        ([8.0, 1.25, -1.5], [1.4, 2.5, 1.4], [0.65, 0.45, 0.17]),
     ];
     for (position, size, color) in blocks {
         let node = engine.scene().create_node(root)?;
@@ -46,8 +46,8 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     }
 
     engine.scene().set_viewpoint(ViewpointState {
-        position: Vec3::new(8.0, 8.0, 13.0),
-        direction: Vec3::new(-8.0, -7.5, -13.0),
+        position: Vec3::new(-10.0, 6.0, 2.0),
+        direction: Vec3::new(1.0, -0.68, 0.0),
         fov_y: 55.0_f32.to_radians(),
     })?;
     engine.scene().set_lighting(SceneLighting {
