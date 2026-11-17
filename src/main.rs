@@ -25,14 +25,54 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let corwin = engine.scene().create_node(root)?;
     engine.scene().set_node_transform(
         corwin,
+        Transform::from_translation(Vec3::new(-4.0, 0.0, 2.0)),
+    )?;
+    let torso = engine.scene().create_node(corwin)?;
+    engine.scene().set_node_transform(
+        torso,
         Transform {
-            translation: Vec3::new(-4.0, 0.75, 2.0),
-            scale: Vec3::new(0.7, 1.5, 0.7),
+            translation: Vec3::new(0.0, 1.0, 0.0),
+            scale: Vec3::new(0.35, 0.7, 0.55),
             ..Transform::default()
         },
     )?;
-    let cube = engine.load_model(Path::new(CUBE_MODEL), corwin)?;
-    engine.scene().set_object_color(cube, [0.85, 0.2, 0.12])?;
+    let cube = engine.load_model(Path::new(CUBE_MODEL), torso)?;
+    engine.scene().set_object_color(cube, [0.35, 0.05, 0.05])?;
+
+    // Простые части фигуры показывают положение рук, ног и головы.
+    let body_parts = [
+        ([0.0, 1.55, 0.0], [0.35, 0.4, 0.35], [0.75, 0.45, 0.3]),
+        ([0.0, 1.0, -0.37], [0.26, 0.65, 0.19], [0.18, 0.025, 0.025]),
+        ([0.0, 1.0, 0.37], [0.26, 0.65, 0.19], [0.18, 0.025, 0.025]),
+        ([0.0, 0.325, -0.16], [0.3, 0.65, 0.22], [0.07, 0.08, 0.1]),
+        ([0.0, 0.325, 0.16], [0.3, 0.65, 0.22], [0.07, 0.08, 0.1]),
+    ];
+    for (position, size, color) in body_parts {
+        let node = engine.scene().create_node(corwin)?;
+        engine.scene().set_node_transform(
+            node,
+            Transform {
+                translation: Vec3::from_array(position),
+                scale: Vec3::from_array(size),
+                ..Transform::default()
+            },
+        )?;
+        let object = engine.scene().clone_object(cube, node)?;
+        engine.scene().set_object_color(object, color)?;
+    }
+
+    // Неподвижный фон заменяет небо, пока движок не поддерживает skybox.
+    let sky = engine.scene().create_node(root)?;
+    engine.scene().set_node_transform(
+        sky,
+        Transform {
+            translation: Vec3::new(70.0, 50.0, 2.0),
+            scale: Vec3::new(0.1, 100.0, 160.0),
+            ..Transform::default()
+        },
+    )?;
+    let backdrop = engine.scene().clone_object(cube, sky)?;
+    engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
     // Маркер Корвина и пять платформ используют общий меш куба.
     let blocks = [
@@ -59,9 +99,9 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     }
 
     engine.scene().set_viewpoint(ViewpointState {
-        position: Vec3::new(-10.0, 6.0, 2.0),
-        direction: Vec3::new(1.0, -0.56, 0.0),
-        fov_y: 48.0_f32.to_radians(),
+        position: Vec3::new(-10.0, 3.1, 2.0),
+        direction: Vec3::new(1.0, -0.22, 0.0),
+        fov_y: 55.0_f32.to_radians(),
     })?;
     engine.scene().set_lighting(SceneLighting {
         ambient: Vec3::splat(0.3),
