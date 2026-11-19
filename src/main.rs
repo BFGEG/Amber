@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::f32::consts::PI;
 use std::path::Path;
 
 use bfge::math::{Quat, Vec3};
@@ -15,11 +16,6 @@ const CAMERA_DISTANCE: f32 = 10.0;
 const MOVE_SPEED: f32 = 3.0;
 const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 
-/// Возвращает рыскание по горизонтальному направлению движения.
-fn yaw_from_direction(direction: Vec3) -> f32 {
-    direction.x.atan2(-direction.z)
-}
-
 fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
     let ground = engine.scene().create_node(root)?;
@@ -35,9 +31,14 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
 
     let corwin = engine.scene().create_node(root)?;
     let mut corwin_position = INITIAL_POSITION;
-    engine
-        .scene()
-        .set_node_transform(corwin, Transform::from_translation(corwin_position))?;
+    engine.scene().set_node_transform(
+        corwin,
+        Transform {
+            translation: corwin_position,
+            rotation: Quat::IDENTITY,
+            ..Transform::default()
+        },
+    )?;
     let torso = engine.scene().create_node(corwin)?;
     engine.scene().set_node_transform(
         torso,
@@ -121,7 +122,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     })?;
     let initial_direction = INITIAL_DIRECTION.normalize();
 
-    let mut yaw = yaw_from_direction(initial_direction);
+    let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
@@ -152,13 +153,15 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
 
             if movement.length_squared() > 0.0 {
                 let movement = movement.normalize();
+                let movement_direction =
+                    Quat::from_rotation_y(movement.x.atan2(movement.z) + PI / 2.0);
                 corwin_position += movement * MOVE_SPEED * time.time_since_last_frame;
 
                 context.scene().set_node_transform(
                     corwin,
                     Transform {
                         translation: corwin_position,
-                        rotation: Quat::from_rotation_y(yaw_from_direction(movement)),
+                        rotation: movement_direction,
                         ..Transform::default()
                     },
                 )?;
