@@ -124,6 +124,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
 
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
+    let mut clock = simulation::FixedClock::default();
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
             let input = context.input();
@@ -152,7 +153,9 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
                 movement -= right;
             }
 
-            player.update(movement, time.time_since_last_frame);
+            for _ in 0..clock.advance(time.time_since_last_frame) {
+                player.fixed_update(movement, simulation::FixedClock::STEP as f32);
+            }
             context.scene().set_node_transform(
                 corwin,
                 Transform {
