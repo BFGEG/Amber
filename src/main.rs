@@ -3,11 +3,16 @@ use std::path::Path;
 
 use bfge::math::Vec3;
 use bfge::{
-    DirectionalLight, Engine, EngineApi, SceneLighting, Transform, ViewpointState, WindowDescriptor,
+    DirectionalLight, Engine, EngineApi, EngineEvent, SceneLighting, Transform, ViewpointState,
+    WindowDescriptor,
 };
 
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
+const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
+const MOUSE_SENSITIVITY: f32 = 0.002;
+const CAMERA_DISTANCE: f32 = 10.0;
+const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 
 fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
@@ -23,10 +28,10 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     engine.load_model(Path::new(GROUND_MODEL), ground)?;
 
     let corwin = engine.scene().create_node(root)?;
-    engine.scene().set_node_transform(
-        corwin,
-        Transform::from_translation(Vec3::new(-4.0, 0.0, 2.0)),
-    )?;
+    let current_corwin_position = INITIAL_POSITION;
+    engine
+        .scene()
+        .set_node_transform(corwin, Transform::from_translation(current_corwin_position))?;
     let torso = engine.scene().create_node(corwin)?;
     engine.scene().set_node_transform(
         torso,
@@ -39,7 +44,6 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let cube = engine.load_model(Path::new(CUBE_MODEL), torso)?;
     engine.scene().set_object_color(cube, [0.35, 0.05, 0.05])?;
 
-    // Простые части фигуры показывают положение рук, ног и головы.
     let body_parts = [
         ([0.0, 1.55, 0.0], [0.35, 0.4, 0.35], [0.75, 0.45, 0.3]),
         ([0.0, 1.0, -0.37], [0.26, 0.65, 0.19], [0.18, 0.025, 0.025]),
@@ -61,7 +65,6 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
         engine.scene().set_object_color(object, color)?;
     }
 
-    // Неподвижный фон заменяет небо, пока движок не поддерживает skybox.
     let sky = engine.scene().create_node(root)?;
     engine.scene().set_node_transform(
         sky,
@@ -74,7 +77,6 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let backdrop = engine.scene().clone_object(cube, sky)?;
     engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
-    // Маркер Корвина и пять платформ используют общий меш куба.
     let blocks = [
         ([-0.5, 0.25, -1.0], [1.4, 0.5, 1.4]),
         ([1.5, 0.5, 2.5], [1.4, 1.0, 1.4]),
@@ -101,6 +103,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     engine.scene().set_viewpoint(ViewpointState {
         position: Vec3::new(-10.0, 3.1, 2.0),
         direction: Vec3::new(1.0, -0.22, 0.0),
+        roll: 0.0,
         fov_y: 55.0_f32.to_radians(),
     })?;
     engine.scene().set_lighting(SceneLighting {
@@ -109,6 +112,27 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
             direction: Vec3::new(-0.5, -1.0, -0.7),
             color: Vec3::splat(0.8),
         },
+    })?;
+    let initial_direction = INITIAL_DIRECTION.normalize();
+
+    let mut yaw = initial_direction.x.atan2(-initial_direction.z);
+    let mut pitch = initial_direction.y.asin();
+    engine.add_event(EngineEvent {
+        frame_started: Box::new(move |context, _time| {
+            let (dx, dy) = context.input().mouse_delta();
+            pitch -= dy as f32 * MOUSE_SENSITIVITY;
+            yaw += dx as f32 * MOUSE_SENSITIVITY;
+            let (yaw_sin, yaw_cos) = yaw.sin_cos();
+            let (pitch_sin, pitch_cos) = pitch.sin_cos();
+            let mut viewpoint = context.scene().viewpoint();
+            let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
+            viewpoint.position = current_corwin_position - direction.normalize() * CAMERA_DISTANCE
+                + Vec3::new(0.0, 1.0, 0.0);
+            viewpoint.direction = direction;
+            context.scene().set_viewpoint(viewpoint)?;
+            Ok(())
+        }),
+        frame_ended: Box::new(|_, _| Ok(())),
     })?;
     Ok(())
 }
