@@ -13,7 +13,8 @@ const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.o
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
 const MOUSE_SENSITIVITY: f32 = 0.002;
 const CAMERA_DISTANCE: f32 = 10.0;
-const MOVE_SPEED: f32 = 3.0;
+const TURN_SMOOTHING: f32 = 10.0;
+const MOVE_SPEED: f32 = 13.0;
 const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 
 fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
@@ -124,6 +125,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
 
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
+    let mut corwin_rotation = Quat::IDENTITY;
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
             let input = context.input();
@@ -131,6 +133,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
             let (dx, dy) = input.mouse_delta();
             pitch -= dy as f32 * MOUSE_SENSITIVITY;
             yaw += dx as f32 * MOUSE_SENSITIVITY;
+
             let (yaw_sin, yaw_cos) = yaw.sin_cos();
             let (pitch_sin, pitch_cos) = pitch.sin_cos();
 
@@ -153,15 +156,19 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
 
             if movement.length_squared() > 0.0 {
                 let movement = movement.normalize();
-                let movement_direction =
+                let target_rotation =
                     Quat::from_rotation_y(movement.x.atan2(movement.z) + PI / 2.0);
+
+                // Плавно поворачиваем Корвина к направлению движения.
+                let turn_blend = 1.0 - (-TURN_SMOOTHING * time.time_since_last_frame).exp();
+                corwin_rotation = corwin_rotation.slerp(target_rotation, turn_blend);
                 corwin_position += movement * MOVE_SPEED * time.time_since_last_frame;
 
                 context.scene().set_node_transform(
                     corwin,
                     Transform {
                         translation: corwin_position,
-                        rotation: movement_direction,
+                        rotation: corwin_rotation,
                         ..Transform::default()
                     },
                 )?;
