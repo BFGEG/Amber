@@ -1,3 +1,4 @@
+mod devtools;
 mod simulation;
 
 use std::error::Error;
@@ -16,7 +17,11 @@ const MOUSE_SENSITIVITY: f32 = 0.002;
 const CAMERA_DISTANCE: f32 = 10.0;
 const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 
-fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
+fn build_scene(
+    engine: &mut Engine,
+    timing_demo: bool,
+    mut limiter: devtools::FrameLimiter,
+) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
     let ground = engine.scene().create_node(root)?;
     engine.scene().set_node_transform(
@@ -125,11 +130,17 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
     let mut clock = simulation::FixedClock::default();
+    let mut demo_steps = 0;
+    let mut demo_frames = 0;
+    let mut demo_elapsed = 0.0;
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
             let input = context.input();
+            let Some(steps) = clock.frame_steps(time.time_since_last_frame, input.is_focused()) else {
+                return Ok(());
+            };
 
-            let (dx, dy) = input.mouse_delta();
+            let (dx, dy) = if timing_demo { (0.0, 0.0) } else { input.mouse_delta() };
             pitch -= dy as f32 * MOUSE_SENSITIVITY;
             yaw += dx as f32 * MOUSE_SENSITIVITY;
 
@@ -153,8 +164,30 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
                 movement -= right;
             }
 
-            for _ in 0..clock.advance(time.time_since_last_frame) {
+            const DEMO_STEPS: usize = 120;
+            if timing_demo {
+                movement = INITIAL_DIRECTION;
+                if demo_steps < DEMO_STEPS {
+                    demo_frames += 1;
+                    demo_elapsed += f64::from(time.time_since_last_frame);
+                }
+            }
+            for _ in 0..steps {
+                if timing_demo && demo_steps == DEMO_STEPS {
+                    break;
+                }
                 player.fixed_update(movement, simulation::FixedClock::STEP as f32);
+                if timing_demo {
+                    demo_steps += 1;
+                    if demo_steps == DEMO_STEPS {
+                        println!(
+                            "Прогон: 120 шагов, 2 с симуляции, {:.3} м; {:.2} с активных кадров, {:.1} FPS",
+                            player.position.distance(INITIAL_POSITION),
+                            demo_elapsed,
+                            f64::from(demo_frames) / demo_elapsed,
+                        );
+                    }
+                }
             }
             context.scene().set_node_transform(
                 corwin,
@@ -173,15 +206,21 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
             context.scene().set_viewpoint(viewpoint)?;
             Ok(())
         }),
-        frame_ended: Box::new(|_, _| Ok(())),
+        frame_ended: Box::new(move |_, _| {
+            limiter.wait();
+            Ok(())
+        }),
     })?;
     Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let limiter = devtools::FrameLimiter::from_env()?;
+    let timing_demo = devtools::timing_demo_enabled()?;
     let mut engine = Engine::new();
     engine.initialize(WindowDescriptor::new("Amber — тестовая сцена", 1280, 720))?;
-    let result = build_scene(&mut engine).and_then(|()| engine.run().map_err(Into::into));
+    let result = build_scene(&mut engine, timing_demo, limiter)
+        .and_then(|()| engine.run().map_err(Into::into));
     let shutdown = engine.shutdown();
     result?;
     shutdown?;

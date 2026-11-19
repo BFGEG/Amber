@@ -35,6 +35,7 @@ impl Player {
 #[derive(Default)]
 pub struct FixedClock {
     accumulated: f64,
+    was_focused: bool,
 }
 
 impl FixedClock {
@@ -42,7 +43,19 @@ impl FixedClock {
     const MAX_FRAME: f64 = 0.25;
     const MAX_STEPS: usize = 8;
 
-    pub fn advance(&mut self, frame_dt: f32) -> usize {
+    /// Возвращает число шагов либо пропуск всей игры и камеры при паузе.
+    pub fn frame_steps(&mut self, frame_dt: f32, focused: bool) -> Option<usize> {
+        let resuming = !self.was_focused;
+        self.was_focused = focused;
+        if !focused || resuming {
+            self.accumulated = 0.0;
+            None
+        } else {
+            Some(self.advance(frame_dt))
+        }
+    }
+
+    fn advance(&mut self, frame_dt: f32) -> usize {
         let frame_dt = f64::from(frame_dt);
         if !frame_dt.is_finite() || !(0.0..=Self::MAX_FRAME).contains(&frame_dt) {
             // Не догоняем время сворачивания окна или длительной остановки.
@@ -78,6 +91,23 @@ mod tests {
         for fps in [30, 60, 144] {
             assert!((travel(fps).position.x - MOVE_SPEED * 3.0).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn focus_pause_freezes_player_and_discards_partial_step() {
+        let mut clock = FixedClock::default();
+        let mut player = Player::new(Vec3::ZERO);
+        assert_eq!(clock.frame_steps(0.02, true), None);
+        assert_eq!(clock.frame_steps(0.01, true), Some(0));
+        for (dt, focused) in [(0.02, false), (10.0, false), (0.2, true)] {
+            for _ in 0..clock.frame_steps(dt, focused).unwrap_or(0) {
+                player.fixed_update(Vec3::X, FixedClock::STEP as f32);
+            }
+            assert_eq!(player.position, Vec3::ZERO);
+            assert_eq!(player.rotation, Quat::IDENTITY);
+        }
+        assert_eq!(clock.frame_steps(0.01, true), Some(0));
+        assert_eq!(clock.frame_steps(0.01, true), Some(1));
     }
 
     #[test]
