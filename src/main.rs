@@ -125,7 +125,13 @@ fn build_scene(
             color: Vec3::splat(0.8),
         },
     })?;
-    let initial_direction = INITIAL_DIRECTION.normalize();
+    let initial_direction = if timing_demo {
+        // Прогон направлен вдоль платформ, как исходный обзор сцены.
+        -INITIAL_DIRECTION
+    } else {
+        INITIAL_DIRECTION
+    }
+    .normalize();
 
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
@@ -166,7 +172,7 @@ fn build_scene(
 
             const DEMO_STEPS: usize = 120;
             if timing_demo {
-                movement = INITIAL_DIRECTION;
+                movement = initial_direction;
                 if demo_steps < DEMO_STEPS {
                     demo_frames += 1;
                     demo_elapsed += f64::from(time.time_since_last_frame);
