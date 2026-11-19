@@ -1,10 +1,10 @@
 use std::error::Error;
 use std::path::Path;
 
-use bfge::math::Vec3;
+use bfge::math::{Quat, Vec3};
 use bfge::{
-    DirectionalLight, Engine, EngineApi, EngineEvent, SceneLighting, Transform, ViewpointState,
-    WindowDescriptor,
+    DirectionalLight, Engine, EngineApi, EngineEvent, KeyCode, SceneLighting, Transform,
+    ViewpointState, WindowDescriptor,
 };
 
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
@@ -12,7 +12,13 @@ const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.o
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
 const MOUSE_SENSITIVITY: f32 = 0.002;
 const CAMERA_DISTANCE: f32 = 10.0;
+const MOVE_SPEED: f32 = 3.0;
 const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
+
+/// Возвращает рыскание по горизонтальному направлению движения.
+fn yaw_from_direction(direction: Vec3) -> f32 {
+    direction.x.atan2(-direction.z)
+}
 
 fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
@@ -28,10 +34,10 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     engine.load_model(Path::new(GROUND_MODEL), ground)?;
 
     let corwin = engine.scene().create_node(root)?;
-    let current_corwin_position = INITIAL_POSITION;
+    let mut corwin_position = INITIAL_POSITION;
     engine
         .scene()
-        .set_node_transform(corwin, Transform::from_translation(current_corwin_position))?;
+        .set_node_transform(corwin, Transform::from_translation(corwin_position))?;
     let torso = engine.scene().create_node(corwin)?;
     engine.scene().set_node_transform(
         torso,
@@ -115,18 +121,52 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     })?;
     let initial_direction = INITIAL_DIRECTION.normalize();
 
-    let mut yaw = initial_direction.x.atan2(-initial_direction.z);
+    let mut yaw = yaw_from_direction(initial_direction);
     let mut pitch = initial_direction.y.asin();
     engine.add_event(EngineEvent {
-        frame_started: Box::new(move |context, _time| {
-            let (dx, dy) = context.input().mouse_delta();
+        frame_started: Box::new(move |context, time| {
+            let input = context.input();
+
+            let (dx, dy) = input.mouse_delta();
             pitch -= dy as f32 * MOUSE_SENSITIVITY;
             yaw += dx as f32 * MOUSE_SENSITIVITY;
             let (yaw_sin, yaw_cos) = yaw.sin_cos();
             let (pitch_sin, pitch_cos) = pitch.sin_cos();
+
+            let forward = Vec3::new(yaw_sin, 0.0, -yaw_cos);
+            let right = Vec3::new(yaw_cos, 0.0, yaw_sin);
+
+            let mut movement = Vec3::ZERO;
+            if input.is_key_pressed(KeyCode::KeyW) {
+                movement += forward;
+            }
+            if input.is_key_pressed(KeyCode::KeyS) {
+                movement -= forward;
+            }
+            if input.is_key_pressed(KeyCode::KeyD) {
+                movement += right;
+            }
+            if input.is_key_pressed(KeyCode::KeyA) {
+                movement -= right;
+            }
+
+            if movement.length_squared() > 0.0 {
+                let movement = movement.normalize();
+                corwin_position += movement * MOVE_SPEED * time.time_since_last_frame;
+
+                context.scene().set_node_transform(
+                    corwin,
+                    Transform {
+                        translation: corwin_position,
+                        rotation: Quat::from_rotation_y(yaw_from_direction(movement)),
+                        ..Transform::default()
+                    },
+                )?;
+            }
+
             let mut viewpoint = context.scene().viewpoint();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
-            viewpoint.position = current_corwin_position - direction.normalize() * CAMERA_DISTANCE
+            viewpoint.position = corwin_position - direction.normalize() * CAMERA_DISTANCE
                 + Vec3::new(0.0, 1.0, 0.0);
             viewpoint.direction = direction;
             context.scene().set_viewpoint(viewpoint)?;
