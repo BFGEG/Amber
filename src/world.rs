@@ -76,10 +76,39 @@ pub const WALLS: [StaticBox; 3] = [
     },
 ];
 
+/// Уступы для спуска, перекладина для удара головой и две опоры с разрывом.
+pub const VERTICAL_COURSE: [StaticBox; 6] = [
+    StaticBox {
+        center: Vec3::new(-4.0, 1.5, -14.0),
+        size: Vec3::new(5.0, 3.0, 5.0),
+    },
+    StaticBox {
+        center: Vec3::new(1.0, 1.0, -14.0),
+        size: Vec3::new(5.0, 2.0, 5.0),
+    },
+    StaticBox {
+        center: Vec3::new(6.0, 0.5, -14.0),
+        size: Vec3::new(5.0, 1.0, 5.0),
+    },
+    StaticBox {
+        center: Vec3::new(-5.0, 2.8, -24.0),
+        size: Vec3::new(6.0, 0.3, 5.0),
+    },
+    StaticBox {
+        center: Vec3::new(9.0, 0.5, -24.0),
+        size: Vec3::new(4.0, 1.0, 5.0),
+    },
+    StaticBox {
+        center: Vec3::new(15.0, 0.5, -24.0),
+        size: Vec3::new(4.0, 1.0, 5.0),
+    },
+];
+
 pub fn static_colliders() -> Vec<Aabb> {
     std::iter::once(GROUND)
         .chain(PLATFORMS)
         .chain(WALLS)
+        .chain(VERTICAL_COURSE)
         .map(StaticBox::bounds)
         .collect()
 }

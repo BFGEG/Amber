@@ -264,6 +264,22 @@ mod tests {
     }
 
     #[test]
+    fn scene_course_supports_sequential_descent_to_the_ground() {
+        let obstacles = crate::world::static_colliders();
+        let mut player = Player::new(Vec3::new(-4.0, 3.0, -14.0));
+        for (walk_steps, height) in [(30, 2.0), (20, 1.0), (40, 0.0)] {
+            for _ in 0..walk_steps {
+                player.fixed_update(Vec3::X, false, FixedClock::STEP as f32, &obstacles);
+            }
+            for _ in 0..60 {
+                player.fixed_update(Vec3::ZERO, false, FixedClock::STEP as f32, &obstacles);
+            }
+            assert_eq!(player.position.y, height);
+            assert!(player.grounded);
+        }
+    }
+
+    #[test]
     fn leaving_platform_loses_support_and_lands_on_lower_ground() {
         let platform = Aabb {
             min: Vec3::new(-1.0, 0.0, -1.0),

@@ -100,7 +100,11 @@ fn build_scene(
     let backdrop = engine.scene().clone_object(cube, sky)?;
     engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
-    for block in world::PLATFORMS.into_iter().chain(world::WALLS) {
+    for block in world::PLATFORMS
+        .into_iter()
+        .chain(world::WALLS)
+        .chain(world::VERTICAL_COURSE)
+    {
         let node = engine.scene().create_node(root)?;
         engine.scene().set_node_transform(
             node,
