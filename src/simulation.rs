@@ -7,11 +7,14 @@ use crate::world::Aabb;
 
 const TURN_SMOOTHING: f32 = 10.0;
 const MOVE_SPEED: f32 = 13.0;
+const GRAVITY: f32 = 24.0;
 
 /// Игровое положение персонажа независимо от узлов графической сцены.
 pub struct Player {
     pub position: Vec3,
     pub rotation: Quat,
+    pub vertical_velocity: f32,
+    pub grounded: bool,
 }
 
 impl Player {
@@ -19,19 +22,33 @@ impl Player {
         Self {
             position,
             rotation: Quat::IDENTITY,
+            vertical_velocity: 0.0,
+            grounded: false,
         }
     }
 
     pub fn fixed_update(&mut self, movement: Vec3, dt: f32, obstacles: &[Aabb]) {
-        if movement.length_squared() == 0.0 {
-            return;
+        self.grounded =
+            self.vertical_velocity <= 0.0 && collision::has_support(self.position, obstacles);
+        if self.grounded {
+            self.vertical_velocity = 0.0;
         }
-        let movement = movement.normalize();
-        let target_rotation = Quat::from_rotation_y(movement.x.atan2(movement.z) + PI / 2.0);
-        let turn_blend = 1.0 - (-TURN_SMOOTHING * dt).exp();
-        self.rotation = self.rotation.slerp(target_rotation, turn_blend);
-        self.position =
-            collision::move_horizontal(self.position, movement * MOVE_SPEED * dt, obstacles);
+        if movement.length_squared() > 0.0 {
+            let movement = movement.normalize();
+            let target_rotation = Quat::from_rotation_y(movement.x.atan2(movement.z) + PI / 2.0);
+            let turn_blend = 1.0 - (-TURN_SMOOTHING * dt).exp();
+            self.rotation = self.rotation.slerp(target_rotation, turn_blend);
+            self.position =
+                collision::move_horizontal(self.position, movement * MOVE_SPEED * dt, obstacles);
+        }
+        let fall = self.vertical_velocity * dt - 0.5 * GRAVITY * dt * dt;
+        self.vertical_velocity -= GRAVITY * dt;
+        let (position, contact) = collision::move_vertical(self.position, fall, obstacles);
+        self.position = position;
+        self.grounded = contact == Some(collision::VerticalContact::Ground);
+        if contact.is_some() {
+            self.vertical_velocity = 0.0;
+        }
     }
 }
 
@@ -79,6 +96,56 @@ impl FixedClock {
 mod tests {
     use super::*;
 
+    #[test]
+    fn stationary_player_lands_and_remains_on_the_ground() {
+        let obstacles = [crate::world::GROUND.bounds()];
+        let mut player = Player::new(Vec3::new(0.0, 5.0, 0.0));
+        for _ in 0..600 {
+            player.fixed_update(Vec3::ZERO, FixedClock::STEP as f32, &obstacles);
+        }
+        assert_eq!(player.position.y, 0.0);
+        assert_eq!(player.vertical_velocity, 0.0);
+        assert!(player.grounded);
+    }
+
+    #[test]
+    fn leaving_platform_loses_support_and_lands_on_lower_ground() {
+        let platform = Aabb {
+            min: Vec3::new(-1.0, 0.0, -1.0),
+            max: Vec3::new(1.0, 2.0, 1.0),
+        };
+        let obstacles = [crate::world::GROUND.bounds(), platform];
+        let mut player = Player::new(Vec3::new(0.0, 2.0, 0.0));
+        for _ in 0..10 {
+            player.fixed_update(Vec3::X, FixedClock::STEP as f32, &obstacles);
+        }
+        assert!(!player.grounded);
+        assert!(player.position.y < 2.0);
+        for _ in 0..120 {
+            player.fixed_update(Vec3::ZERO, FixedClock::STEP as f32, &obstacles);
+        }
+        assert_eq!(player.position.y, 0.0);
+        assert!(player.grounded);
+    }
+
+    #[test]
+    fn pressing_against_wall_does_not_raise_player() {
+        let obstacles = [
+            crate::world::GROUND.bounds(),
+            Aabb {
+                min: Vec3::new(2.0, 0.0, -10.0),
+                max: Vec3::new(3.0, 4.0, 10.0),
+            },
+        ];
+        let mut player = Player::new(Vec3::ZERO);
+        for _ in 0..120 {
+            player.fixed_update(Vec3::X, FixedClock::STEP as f32, &obstacles);
+        }
+        assert_eq!(player.position.y, 0.0);
+        assert!(player.grounded);
+        assert!(player.position.x < 1.5);
+    }
+
     fn travel(fps: u32) -> Player {
         let mut player = Player::new(Vec3::ZERO);
         let mut clock = FixedClock::default();
@@ -116,10 +183,13 @@ mod tests {
 
     #[test]
     fn wall_contact_matches_at_different_frame_rates() {
-        let obstacles = [Aabb {
-            min: Vec3::new(2.0, 0.0, -100.0),
-            max: Vec3::new(2.1, 2.0, 100.0),
-        }];
+        let obstacles = [
+            crate::world::GROUND.bounds(),
+            Aabb {
+                min: Vec3::new(2.0, 0.0, -100.0),
+                max: Vec3::new(2.1, 2.0, 100.0),
+            },
+        ];
         for fps in [30, 60, 144] {
             let mut player = Player::new(Vec3::ZERO);
             let mut clock = FixedClock::default();

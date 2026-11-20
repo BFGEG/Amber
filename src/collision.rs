@@ -16,6 +16,53 @@ pub fn player_bounds(feet: Vec3) -> Aabb {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum VerticalContact {
+    Ground,
+    Ceiling,
+}
+
+fn overlaps_horizontally(feet: Vec3, obstacle: Aabb) -> bool {
+    let player = player_bounds(feet);
+    player.min.x < obstacle.max.x
+        && player.max.x > obstacle.min.x
+        && player.min.z < obstacle.max.z
+        && player.max.z > obstacle.min.z
+}
+
+pub fn has_support(feet: Vec3, obstacles: &[Aabb]) -> bool {
+    obstacles.iter().any(|obstacle| {
+        overlaps_horizontally(feet, *obstacle) && (feet.y - obstacle.max.y).abs() <= CONTACT_GAP
+    })
+}
+
+/// Проверяет весь вертикальный путь ног и головы, выбирая ближайшую поверхность.
+pub fn move_vertical(
+    mut feet: Vec3,
+    displacement: f32,
+    obstacles: &[Aabb],
+) -> (Vec3, Option<VerticalContact>) {
+    let mut target = feet.y + displacement;
+    let mut contact = None;
+    for obstacle in obstacles {
+        if !overlaps_horizontally(feet, *obstacle) {
+            continue;
+        }
+        if displacement < 0.0 && feet.y >= obstacle.max.y && target <= obstacle.max.y {
+            target = obstacle.max.y;
+            contact = Some(VerticalContact::Ground);
+        } else if displacement > 0.0
+            && feet.y + PLAYER_HEIGHT <= obstacle.min.y
+            && target + PLAYER_HEIGHT >= obstacle.min.y
+        {
+            target = obstacle.min.y - PLAYER_HEIGHT;
+            contact = Some(VerticalContact::Ceiling);
+        }
+    }
+    feet.y = target;
+    (feet, contact)
+}
+
 /// Перемещает свободный от пересечений объём до контакта, затем вдоль стены.
 /// Высота ног сохраняется; начальные пересечения должен исключить создатель сцены.
 pub fn move_horizontal(mut feet: Vec3, displacement: Vec3, obstacles: &[Aabb]) -> Vec3 {
@@ -93,6 +140,33 @@ fn sweep(origin: Vec3, delta: Vec3, obstacle: Aabb) -> Option<(f32, [bool; 3])> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vertical_sweep_chooses_nearest_surface_in_either_order() {
+        let lower = Aabb {
+            min: Vec3::new(-2.0, -1.0, -2.0),
+            max: Vec3::new(2.0, 0.0, 2.0),
+        };
+        let upper = Aabb {
+            min: Vec3::new(-2.0, 2.0, -2.0),
+            max: Vec3::new(2.0, 2.1, 2.0),
+        };
+        for obstacles in [[lower, upper], [upper, lower]] {
+            let (position, contact) = move_vertical(Vec3::Y * 5.0, -100.0, &obstacles);
+            assert_eq!(position.y, upper.max.y);
+            assert_eq!(contact, Some(VerticalContact::Ground));
+        }
+    }
+
+    #[test]
+    fn exact_platform_edge_is_not_support() {
+        let block = Aabb {
+            min: Vec3::ZERO,
+            max: Vec3::ONE,
+        };
+        assert!(has_support(Vec3::new(0.5, 1.0, 0.5), &[block]));
+        assert!(!has_support(Vec3::new(1.5, 1.0, 0.5), &[block]));
+    }
 
     fn wall() -> Aabb {
         Aabb {
