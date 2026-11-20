@@ -8,4 +8,4 @@ license-file = "LICENSE"
 description = "Корвин: Путь к Амберу — 3D-платформер-головоломка"
 
 [dependencies]
-bfge = { package = "BFGE", git = "https://github.com/BFGEG/BFGE.git", rev = "2b1457c3b4a0d0c168a82196bdaa79835073d62e" }
+bfge = { package = "BFGE", git = "https://github.com/BFGEG/BFGE.git", branch = "main" }
