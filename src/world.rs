@@ -1,5 +1,8 @@
 use bfge::math::Vec3;
 
+pub const START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
+pub const TIMING_START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, -6.0);
+
 /// Неподвижная игровая область в мировых координатах; декор сюда не входит.
 #[derive(Clone, Copy)]
 pub struct Aabb {
