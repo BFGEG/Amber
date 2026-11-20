@@ -1,4 +1,5 @@
 mod collider_debug;
+mod collision;
 mod devtools;
 mod simulation;
 mod world;
@@ -37,7 +38,13 @@ fn build_scene(
     engine.load_model(Path::new(GROUND_MODEL), ground)?;
 
     let corwin = engine.scene().create_node(root)?;
-    let mut player = simulation::Player::new(INITIAL_POSITION);
+    // Для сравнения FPS оставляем свободную полосу в стороне от препятствий.
+    let start_position = if timing_demo {
+        Vec3::new(-4.0, 0.0, -6.0)
+    } else {
+        INITIAL_POSITION
+    };
+    let mut player = simulation::Player::new(start_position);
     engine.scene().set_node_transform(
         corwin,
         Transform {
@@ -118,6 +125,17 @@ fn build_scene(
             [0.1, 1.0, 0.2],
         )?);
     }
+    let player_outline = engine.scene().create_node(root)?;
+    outlines.extend(collider_debug::create_outline(
+        engine.scene(),
+        player_outline,
+        cube,
+        collision::player_bounds(Vec3::ZERO),
+        [1.0, 0.65, 0.05],
+    )?);
+    engine
+        .scene()
+        .set_node_transform(player_outline, Transform::from_translation(player.position))?;
     let mut debug_visible = false;
     let mut debug_pressed = false;
 
@@ -195,13 +213,13 @@ fn build_scene(
                 if timing_demo && demo_steps == DEMO_STEPS {
                     break;
                 }
-                player.fixed_update(movement, simulation::FixedClock::STEP as f32);
+                player.fixed_update(movement, simulation::FixedClock::STEP as f32, &colliders);
                 if timing_demo {
                     demo_steps += 1;
                     if demo_steps == DEMO_STEPS {
                         println!(
                             "Прогон: 120 шагов, 2 с симуляции, {:.3} м; {:.2} с активных кадров, {:.1} FPS",
-                            player.position.distance(INITIAL_POSITION),
+                            player.position.distance(start_position),
                             demo_elapsed,
                             f64::from(demo_frames) / demo_elapsed,
                         );
@@ -223,6 +241,11 @@ fn build_scene(
                 },
             )?;
 
+            if debug_visible {
+                context.scene().set_node_transform(
+                    player_outline, Transform::from_translation(player.position),
+                )?;
+            }
             let mut viewpoint = context.scene().viewpoint();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
             viewpoint.position = player.position - direction.normalize() * CAMERA_DISTANCE

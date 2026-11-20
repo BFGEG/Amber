@@ -2,6 +2,9 @@ use std::f32::consts::PI;
 
 use bfge::math::{Quat, Vec3};
 
+use crate::collision;
+use crate::world::Aabb;
+
 const TURN_SMOOTHING: f32 = 10.0;
 const MOVE_SPEED: f32 = 13.0;
 
@@ -19,7 +22,7 @@ impl Player {
         }
     }
 
-    pub fn fixed_update(&mut self, movement: Vec3, dt: f32) {
+    pub fn fixed_update(&mut self, movement: Vec3, dt: f32, obstacles: &[Aabb]) {
         if movement.length_squared() == 0.0 {
             return;
         }
@@ -27,7 +30,8 @@ impl Player {
         let target_rotation = Quat::from_rotation_y(movement.x.atan2(movement.z) + PI / 2.0);
         let turn_blend = 1.0 - (-TURN_SMOOTHING * dt).exp();
         self.rotation = self.rotation.slerp(target_rotation, turn_blend);
-        self.position += movement * MOVE_SPEED * dt;
+        self.position =
+            collision::move_horizontal(self.position, movement * MOVE_SPEED * dt, obstacles);
     }
 }
 
@@ -80,7 +84,7 @@ mod tests {
         let mut clock = FixedClock::default();
         for _ in 0..fps * 3 {
             for _ in 0..clock.advance(1.0 / fps as f32) {
-                player.fixed_update(Vec3::X, FixedClock::STEP as f32);
+                player.fixed_update(Vec3::X, FixedClock::STEP as f32, &[]);
             }
         }
         player
@@ -101,7 +105,7 @@ mod tests {
         assert_eq!(clock.frame_steps(0.01, true), Some(0));
         for (dt, focused) in [(0.02, false), (10.0, false), (0.2, true)] {
             for _ in 0..clock.frame_steps(dt, focused).unwrap_or(0) {
-                player.fixed_update(Vec3::X, FixedClock::STEP as f32);
+                player.fixed_update(Vec3::X, FixedClock::STEP as f32, &[]);
             }
             assert_eq!(player.position, Vec3::ZERO);
             assert_eq!(player.rotation, Quat::IDENTITY);
@@ -111,11 +115,32 @@ mod tests {
     }
 
     #[test]
+    fn wall_contact_matches_at_different_frame_rates() {
+        let obstacles = [Aabb {
+            min: Vec3::new(2.0, 0.0, -100.0),
+            max: Vec3::new(2.1, 2.0, 100.0),
+        }];
+        for fps in [30, 60, 144] {
+            let mut player = Player::new(Vec3::ZERO);
+            let mut clock = FixedClock::default();
+            for _ in 0..fps * 3 {
+                for _ in 0..clock.advance(1.0 / fps as f32) {
+                    player.fixed_update(Vec3::X + Vec3::Z, FixedClock::STEP as f32, &obstacles);
+                }
+            }
+            assert!((player.position.x - 1.5).abs() < 0.001);
+            assert!((player.position.z - MOVE_SPEED * 3.0 / 2.0_f32.sqrt()).abs() < 0.001);
+            player.fixed_update(-Vec3::X, FixedClock::STEP as f32, &obstacles);
+            assert!(player.position.x < 1.4);
+        }
+    }
+
+    #[test]
     fn diagonal_does_not_increase_speed() {
         let mut straight = Player::new(Vec3::ZERO);
         let mut diagonal = Player::new(Vec3::ZERO);
-        straight.fixed_update(Vec3::X, FixedClock::STEP as f32);
-        diagonal.fixed_update(Vec3::X + Vec3::Z, FixedClock::STEP as f32);
+        straight.fixed_update(Vec3::X, FixedClock::STEP as f32, &[]);
+        diagonal.fixed_update(Vec3::X + Vec3::Z, FixedClock::STEP as f32, &[]);
         assert!((straight.position.length() - diagonal.position.length()).abs() < 0.00001);
     }
 
