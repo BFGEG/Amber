@@ -23,6 +23,7 @@ const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 fn build_scene(
     engine: &mut Engine,
     timing_demo: bool,
+    mut debug_visible: bool,
     mut limiter: devtools::FrameLimiter,
 ) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
@@ -136,7 +137,9 @@ fn build_scene(
     engine
         .scene()
         .set_node_transform(player_outline, Transform::from_translation(player.position))?;
-    let mut debug_visible = false;
+    for object in &outlines {
+        engine.scene().set_object_visible(*object, debug_visible)?;
+    }
     let mut debug_pressed = false;
 
     engine.scene().set_viewpoint(ViewpointState {
@@ -265,9 +268,10 @@ fn build_scene(
 fn main() -> Result<(), Box<dyn Error>> {
     let limiter = devtools::FrameLimiter::from_env()?;
     let timing_demo = devtools::timing_demo_enabled()?;
+    let debug_visible = devtools::collider_debug_enabled()?;
     let mut engine = Engine::new();
     engine.initialize(WindowDescriptor::new("Amber — тестовая сцена", 1280, 720))?;
-    let result = build_scene(&mut engine, timing_demo, limiter)
+    let result = build_scene(&mut engine, timing_demo, debug_visible, limiter)
         .and_then(|()| engine.run().map_err(Into::into));
     let shutdown = engine.shutdown();
     result?;
