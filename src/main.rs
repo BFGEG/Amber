@@ -1,5 +1,7 @@
+mod collider_debug;
 mod devtools;
 mod simulation;
+mod world;
 
 use std::error::Error;
 use std::path::Path;
@@ -27,8 +29,8 @@ fn build_scene(
     engine.scene().set_node_transform(
         ground,
         Transform {
-            translation: Vec3::new(40.0, 0.0, 0.0),
-            scale: Vec3::new(160.0, 1.0, 200.0),
+            translation: Vec3::new(world::GROUND.center.x, 0.0, world::GROUND.center.z),
+            scale: Vec3::new(world::GROUND.size.x, 1.0, world::GROUND.size.z),
             ..Transform::default()
         },
     )?;
@@ -89,20 +91,13 @@ fn build_scene(
     let backdrop = engine.scene().clone_object(cube, sky)?;
     engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
-    let blocks = [
-        ([-0.5, 0.25, -1.0], [1.4, 0.5, 1.4]),
-        ([1.5, 0.5, 2.5], [1.4, 1.0, 1.4]),
-        ([4.0, 0.75, -1.5], [1.4, 1.5, 1.4]),
-        ([6.0, 1.0, 2.5], [1.4, 2.0, 1.4]),
-        ([8.0, 1.25, -1.5], [1.4, 2.5, 1.4]),
-    ];
-    for (position, size) in blocks {
+    for block in world::PLATFORMS.into_iter().chain(world::WALLS) {
         let node = engine.scene().create_node(root)?;
         engine.scene().set_node_transform(
             node,
             Transform {
-                translation: Vec3::from_array(position),
-                scale: Vec3::from_array(size),
+                translation: block.center,
+                scale: block.size,
                 ..Transform::default()
             },
         )?;
@@ -111,6 +106,20 @@ fn build_scene(
             .scene()
             .set_object_color(object, [0.25, 0.25, 0.25])?;
     }
+
+    let colliders = world::static_colliders();
+    let mut outlines = Vec::new();
+    for bounds in &colliders {
+        outlines.extend(collider_debug::create_outline(
+            engine.scene(),
+            root,
+            cube,
+            *bounds,
+            [0.1, 1.0, 0.2],
+        )?);
+    }
+    let mut debug_visible = false;
+    let mut debug_pressed = false;
 
     engine.scene().set_viewpoint(ViewpointState {
         position: Vec3::new(-10.0, 3.1, 2.0),
@@ -143,8 +152,12 @@ fn build_scene(
         frame_started: Box::new(move |context, time| {
             let input = context.input();
             let Some(steps) = clock.frame_steps(time.time_since_last_frame, input.is_focused()) else {
+                debug_pressed = false;
                 return Ok(());
             };
+            let pressed = input.is_key_pressed(KeyCode::F3);
+            let toggle_debug = pressed && !debug_pressed;
+            debug_pressed = pressed;
 
             let (dx, dy) = if timing_demo { (0.0, 0.0) } else { input.mouse_delta() };
             pitch -= dy as f32 * MOUSE_SENSITIVITY;
@@ -193,6 +206,12 @@ fn build_scene(
                             f64::from(demo_frames) / demo_elapsed,
                         );
                     }
+                }
+            }
+            if toggle_debug {
+                debug_visible = !debug_visible;
+                for object in &outlines {
+                    context.scene().set_object_visible(*object, debug_visible)?;
                 }
             }
             context.scene().set_node_transform(
