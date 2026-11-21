@@ -15,6 +15,7 @@ use bfge::{
     ViewpointState, WindowDescriptor,
 };
 
+const CORWIN_MODEL: &str = concat!(env!("OUT_DIR"), "/corwin.obj");
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
@@ -54,38 +55,7 @@ fn build_scene(
             ..Transform::default()
         },
     )?;
-    let torso = engine.scene().create_node(corwin)?;
-    engine.scene().set_node_transform(
-        torso,
-        Transform {
-            translation: Vec3::new(0.0, 1.0, 0.0),
-            scale: Vec3::new(0.35, 0.7, 0.55),
-            ..Transform::default()
-        },
-    )?;
-    let cube = engine.load_model(Path::new(CUBE_MODEL), torso)?;
-    engine.scene().set_object_color(cube, [0.35, 0.05, 0.05])?;
-
-    let body_parts = [
-        ([0.0, 1.55, 0.0], [0.35, 0.4, 0.35], [0.75, 0.45, 0.3]),
-        ([0.0, 1.0, -0.37], [0.26, 0.65, 0.19], [0.18, 0.025, 0.025]),
-        ([0.0, 1.0, 0.37], [0.26, 0.65, 0.19], [0.18, 0.025, 0.025]),
-        ([0.0, 0.325, -0.16], [0.3, 0.65, 0.22], [0.07, 0.08, 0.1]),
-        ([0.0, 0.325, 0.16], [0.3, 0.65, 0.22], [0.07, 0.08, 0.1]),
-    ];
-    for (position, size, color) in body_parts {
-        let node = engine.scene().create_node(corwin)?;
-        engine.scene().set_node_transform(
-            node,
-            Transform {
-                translation: Vec3::from_array(position),
-                scale: Vec3::from_array(size),
-                ..Transform::default()
-            },
-        )?;
-        let object = engine.scene().clone_object(cube, node)?;
-        engine.scene().set_object_color(object, color)?;
-    }
+    engine.load_model(Path::new(CORWIN_MODEL), corwin)?;
 
     let sky = engine.scene().create_node(root)?;
     engine.scene().set_node_transform(
@@ -96,7 +66,7 @@ fn build_scene(
             ..Transform::default()
         },
     )?;
-    let backdrop = engine.scene().clone_object(cube, sky)?;
+    let backdrop = engine.load_model(Path::new(CUBE_MODEL), sky)?;
     engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
     for block in world::PLATFORMS
@@ -113,7 +83,7 @@ fn build_scene(
                 ..Transform::default()
             },
         )?;
-        let object = engine.scene().clone_object(cube, node)?;
+        let object = engine.scene().clone_object(backdrop, node)?;
         engine
             .scene()
             .set_object_color(object, [0.25, 0.25, 0.25])?;
@@ -125,7 +95,7 @@ fn build_scene(
         outlines.extend(collider_debug::create_outline(
             engine.scene(),
             root,
-            cube,
+            backdrop,
             *bounds,
             [0.1, 1.0, 0.2],
         )?);
@@ -134,7 +104,7 @@ fn build_scene(
     outlines.extend(collider_debug::create_outline(
         engine.scene(),
         player_outline,
-        cube,
+        backdrop,
         collision::player_bounds(Vec3::ZERO),
         [1.0, 0.65, 0.05],
     )?);

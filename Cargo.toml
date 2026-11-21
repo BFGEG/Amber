@@ -9,3 +9,6 @@ description = "Корвин: Путь к Амберу — 3D-платформе�
 
 [dependencies]
 bfge = { package = "BFGE", git = "https://github.com/BFGEG/BFGE.git", branch = "main" }
+
+[build-dependencies]
+flate2 = "1"
