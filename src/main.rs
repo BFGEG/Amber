@@ -1,6 +1,7 @@
 mod collider_debug;
 mod collision;
 mod devtools;
+mod input;
 mod simulation;
 mod world;
 
@@ -99,7 +100,11 @@ fn build_scene(
     let backdrop = engine.scene().clone_object(cube, sky)?;
     engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
-    for block in world::PLATFORMS.into_iter().chain(world::WALLS) {
+    for block in world::PLATFORMS
+        .into_iter()
+        .chain(world::WALLS)
+        .chain(world::VERTICAL_COURSE)
+    {
         let node = engine.scene().create_node(root)?;
         engine.scene().set_node_transform(
             node,
@@ -166,6 +171,7 @@ fn build_scene(
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
     let mut clock = simulation::FixedClock::default();
+    let mut jump_input = input::JumpInput::default();
     let mut demo_steps = 0;
     let mut demo_frames = 0;
     let mut demo_elapsed = 0.0;
@@ -173,9 +179,11 @@ fn build_scene(
         frame_started: Box::new(move |context, time| {
             let input = context.input();
             let Some(steps) = clock.frame_steps(time.time_since_last_frame, input.is_focused()) else {
+                jump_input.pause(input.is_key_pressed(KeyCode::Space));
                 debug_pressed = false;
                 return Ok(());
             };
+            jump_input.sample(!timing_demo && input.is_key_pressed(KeyCode::Space));
             let pressed = input.is_key_pressed(KeyCode::F3);
             let toggle_debug = pressed && !debug_pressed;
             debug_pressed = pressed;
@@ -216,7 +224,7 @@ fn build_scene(
                 if timing_demo && demo_steps == DEMO_STEPS {
                     break;
                 }
-                player.fixed_update(movement, simulation::FixedClock::STEP as f32, &colliders);
+                player.fixed_update(movement, jump_input.take(), simulation::FixedClock::STEP as f32, &colliders);
                 if timing_demo {
                     demo_steps += 1;
                     if demo_steps == DEMO_STEPS {
