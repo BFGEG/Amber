@@ -1,3 +1,5 @@
+mod skybox;
+
 use std::error::Error;
 use std::path::Path;
 
@@ -61,19 +63,6 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
         engine.scene().set_object_color(object, color)?;
     }
 
-    // Неподвижный фон заменяет небо, пока движок не поддерживает skybox.
-    let sky = engine.scene().create_node(root)?;
-    engine.scene().set_node_transform(
-        sky,
-        Transform {
-            translation: Vec3::new(70.0, 50.0, 2.0),
-            scale: Vec3::new(0.1, 100.0, 160.0),
-            ..Transform::default()
-        },
-    )?;
-    let backdrop = engine.scene().clone_object(cube, sky)?;
-    engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
-
     // Маркер Корвина и пять платформ используют общий меш куба.
     let blocks = [
         ([-0.5, 0.25, -1.0], [1.4, 0.5, 1.4]),
@@ -110,6 +99,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
             color: Vec3::splat(0.8),
         },
     })?;
+    skybox::add_to_scene(engine)?;
     Ok(())
 }
 
