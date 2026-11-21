@@ -146,12 +146,6 @@ fn build_scene(
     }
     let mut debug_pressed = false;
 
-    engine.scene().set_viewpoint(ViewpointState {
-        position: Vec3::new(-10.0, 3.1, 2.0),
-        direction: Vec3::new(1.0, -0.22, 0.0),
-        roll: 0.0,
-        fov_y: 55.0_f32.to_radians(),
-    })?;
     engine.scene().set_lighting(SceneLighting {
         ambient: Vec3::splat(0.3),
         directional: DirectionalLight {
@@ -166,6 +160,20 @@ fn build_scene(
         INITIAL_DIRECTION
     }
     .normalize();
+
+    let mut viewpoint = ViewpointState {
+        position: Vec3::ZERO,
+        direction: initial_direction,
+        roll: 0.0,
+        fov_y: 55.0_f32.to_radians(),
+    };
+    camera::follow_player(
+        &mut viewpoint,
+        start_position,
+        initial_direction,
+        &colliders,
+    );
+    engine.scene().set_viewpoint(viewpoint)?;
 
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
@@ -189,7 +197,7 @@ fn build_scene(
             debug_pressed = pressed;
 
             let (dx, dy) = if timing_demo { (0.0, 0.0) } else { input.mouse_delta() };
-            pitch -= dy as f32 * MOUSE_SENSITIVITY;
+            pitch = camera::clamp_pitch(pitch - dy as f32 * MOUSE_SENSITIVITY);
             yaw += dx as f32 * MOUSE_SENSITIVITY;
 
             let (yaw_sin, yaw_cos) = yaw.sin_cos();
@@ -265,7 +273,7 @@ fn build_scene(
             }
             let mut viewpoint = context.scene().viewpoint();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
-            camera::follow_player(&mut viewpoint, player.position, direction);
+            camera::follow_player(&mut viewpoint, player.position, direction, &colliders);
             context.scene().set_viewpoint(viewpoint)?;
             Ok(())
         }),

@@ -64,7 +64,7 @@ pub const PLATFORMS: [StaticBox; 5] = [
     },
 ];
 
-pub const WALLS: [StaticBox; 3] = [
+pub const WALLS: [StaticBox; 4] = [
     StaticBox {
         center: Vec3::new(1.0, 1.0, 8.0),
         size: Vec3::new(6.0, 2.0, 0.5),
@@ -76,6 +76,11 @@ pub const WALLS: [StaticBox; 3] = [
     StaticBox {
         center: Vec3::new(15.0, 1.0, 7.0),
         size: Vec3::new(6.0, 2.0, 0.5),
+    },
+    // Параллельная стена оставляет проход шириной 1,5 м.
+    StaticBox {
+        center: Vec3::new(14.0, 1.25, 4.0),
+        size: Vec3::new(0.5, 2.5, 6.0),
     },
 ];
 
