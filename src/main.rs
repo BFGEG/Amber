@@ -1,3 +1,4 @@
+mod camera;
 mod collider_debug;
 mod collision;
 mod devtools;
@@ -18,8 +19,6 @@ const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj")
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
 const MOUSE_SENSITIVITY: f32 = 0.002;
-const CAMERA_DISTANCE: f32 = 10.0;
-const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 
 fn build_scene(
     engine: &mut Engine,
@@ -42,9 +41,9 @@ fn build_scene(
     let corwin = engine.scene().create_node(root)?;
     // Для сравнения FPS оставляем свободную полосу в стороне от препятствий.
     let start_position = if timing_demo {
-        Vec3::new(-4.0, 0.0, -6.0)
+        world::TIMING_START_POSITION
     } else {
-        INITIAL_POSITION
+        world::START_POSITION
     };
     let mut player = simulation::Player::new(start_position);
     engine.scene().set_node_transform(
@@ -183,7 +182,8 @@ fn build_scene(
                 debug_pressed = false;
                 return Ok(());
             };
-            jump_input.sample(!timing_demo && input.is_key_pressed(KeyCode::Space));
+            let space_held = input.is_key_pressed(KeyCode::Space);
+            jump_input.sample(!timing_demo && space_held);
             let pressed = input.is_key_pressed(KeyCode::F3);
             let toggle_debug = pressed && !debug_pressed;
             debug_pressed = pressed;
@@ -225,6 +225,12 @@ fn build_scene(
                     break;
                 }
                 player.fixed_update(movement, jump_input.take(), simulation::FixedClock::STEP as f32, &colliders);
+                if player.respawn_if_fallen(start_position, &colliders) {
+                    clock.clear_time();
+                    jump_input.pause(space_held);
+                    // Остальные шаги кадра не должны сразу сдвинуть персонажа со старта.
+                    break;
+                }
                 if timing_demo {
                     demo_steps += 1;
                     if demo_steps == DEMO_STEPS {
@@ -259,9 +265,7 @@ fn build_scene(
             }
             let mut viewpoint = context.scene().viewpoint();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
-            viewpoint.position = player.position - direction.normalize() * CAMERA_DISTANCE
-                + Vec3::new(0.0, 1.0, 0.0);
-            viewpoint.direction = direction;
+            camera::follow_player(&mut viewpoint, player.position, direction);
             context.scene().set_viewpoint(viewpoint)?;
             Ok(())
         }),
