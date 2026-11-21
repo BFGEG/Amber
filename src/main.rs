@@ -167,7 +167,8 @@ fn build_scene(
         roll: 0.0,
         fov_y: 55.0_f32.to_radians(),
     };
-    camera::follow_player(
+    let mut follow_camera = camera::FollowCamera::new(start_position);
+    follow_camera.place(
         &mut viewpoint,
         start_position,
         initial_direction,
@@ -234,6 +235,7 @@ fn build_scene(
                 }
                 player.fixed_update(movement, jump_input.take(), simulation::FixedClock::STEP as f32, &colliders);
                 if player.respawn_if_fallen(start_position, &colliders) {
+                    follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
                     jump_input.pause(space_held);
                     // Остальные шаги кадра не должны сразу сдвинуть персонажа со старта.
@@ -273,7 +275,8 @@ fn build_scene(
             }
             let mut viewpoint = context.scene().viewpoint();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
-            camera::follow_player(&mut viewpoint, player.position, direction, &colliders);
+            follow_camera.update_height(player.position, time.time_since_last_frame);
+            follow_camera.place(&mut viewpoint, player.position, direction, &colliders);
             context.scene().set_viewpoint(viewpoint)?;
             Ok(())
         }),
