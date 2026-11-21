@@ -19,26 +19,36 @@ const CORWIN_MODEL: &str = concat!(env!("OUT_DIR"), "/corwin.obj");
 const CORWIN_WEAPONS: &str = concat!(env!("OUT_DIR"), "/corwin-weapons.obj");
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
-const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
+const TERRACE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/terrace.obj");
+const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, -0.46, 0.0);
+const TIMING_DIRECTION: Vec3 = Vec3::X;
 const MOUSE_SENSITIVITY: f32 = 0.002;
 
 fn build_scene(
     engine: &mut Engine,
     timing_demo: bool,
+    physics_demo: bool,
     mut debug_visible: bool,
     mut limiter: devtools::FrameLimiter,
 ) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
-    let ground = engine.scene().create_node(root)?;
-    engine.scene().set_node_transform(
-        ground,
-        Transform {
-            translation: Vec3::new(world::GROUND.center.x, 0.0, world::GROUND.center.z),
-            scale: Vec3::new(world::GROUND.size.x, 1.0, world::GROUND.size.z),
-            ..Transform::default()
-        },
-    )?;
-    engine.load_model(Path::new(GROUND_MODEL), ground)?;
+    let (grounds, ground_model): (&[_], _) = if physics_demo {
+        (&[world::GROUND], GROUND_MODEL)
+    } else {
+        (&[world::LOWER_TERRACE, world::UPPER_TERRACE], TERRACE_MODEL)
+    };
+    for ground in grounds {
+        let node = engine.scene().create_node(root)?;
+        engine.scene().set_node_transform(
+            node,
+            Transform {
+                translation: Vec3::new(ground.center.x, ground.bounds().max.y, ground.center.z),
+                scale: Vec3::new(ground.size.x, 1.0, ground.size.z),
+                ..Transform::default()
+            },
+        )?;
+        engine.load_model(Path::new(ground_model), node)?;
+    }
 
     let corwin = engine.scene().create_node(root)?;
     // Для сравнения FPS оставляем свободную полосу в стороне от препятствий.
@@ -56,8 +66,8 @@ fn build_scene(
             ..Transform::default()
         },
     )?;
-    engine.load_model(Path::new(CORWIN_MODEL), corwin)?;
-    engine.load_model(Path::new(CORWIN_WEAPONS), corwin)?;
+    let corwin_model = engine.load_model(Path::new(CORWIN_MODEL), corwin)?;
+    let corwin_weapons = engine.load_model(Path::new(CORWIN_WEAPONS), corwin)?;
 
     let sky = engine.scene().create_node(root)?;
     engine.scene().set_node_transform(
@@ -71,11 +81,35 @@ fn build_scene(
     let backdrop = engine.load_model(Path::new(CUBE_MODEL), sky)?;
     engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
-    for block in world::PLATFORMS
-        .into_iter()
-        .chain(world::WALLS)
-        .chain(world::VERTICAL_COURSE)
-    {
+    let cube = engine.load_model(Path::new(CUBE_MODEL), root)?;
+
+    let mut blocks = Vec::new();
+    if physics_demo {
+        blocks.extend(world::diagnostic_blocks().map(|block| (block, [0.25, 0.25, 0.25])));
+    } else {
+        blocks.extend(grounds.iter().copied().map(|block| {
+            // Куб образует боковые откосы. Верх уже закрыт травяной плоскостью.
+            let rock = world::StaticBox {
+                center: block.center - Vec3::Y * 0.01,
+                ..block
+            };
+            (rock, [0.26, 0.16, 0.09])
+        }));
+        blocks.extend(world::ASCENT.map(|block| (block, [0.29, 0.41, 0.44])));
+        blocks.extend(world::COURSE_WALLS.map(|block| (block, [0.25, 0.29, 0.31])));
+        for ground in grounds {
+            let path = world::StaticBox {
+                center: Vec3::new(
+                    ground.center.x,
+                    ground.bounds().max.y + 0.012,
+                    ground.center.z,
+                ),
+                size: Vec3::new(ground.size.x - 0.15, 0.018, 8.0),
+            };
+            blocks.push((path, [0.45, 0.32, 0.17]));
+        }
+    }
+    for (block, color) in blocks {
         let node = engine.scene().create_node(root)?;
         engine.scene().set_node_transform(
             node,
@@ -85,19 +119,21 @@ fn build_scene(
                 ..Transform::default()
             },
         )?;
-        let object = engine.scene().clone_object(backdrop, node)?;
-        engine
-            .scene()
-            .set_object_color(object, [0.25, 0.25, 0.25])?;
+        let object = engine.scene().clone_object(cube, node)?;
+        engine.scene().set_object_color(object, color)?;
     }
 
-    let colliders = world::static_colliders();
+    let colliders = if physics_demo {
+        world::diagnostic_colliders()
+    } else {
+        world::course_colliders()
+    };
     let mut outlines = Vec::new();
     for bounds in &colliders {
         outlines.extend(collider_debug::create_outline(
             engine.scene(),
             root,
-            backdrop,
+            cube,
             *bounds,
             [0.1, 1.0, 0.2],
         )?);
@@ -106,7 +142,7 @@ fn build_scene(
     outlines.extend(collider_debug::create_outline(
         engine.scene(),
         player_outline,
-        backdrop,
+        cube,
         collision::player_bounds(Vec3::ZERO),
         [1.0, 0.65, 0.05],
     )?);
@@ -116,6 +152,7 @@ fn build_scene(
     for object in &outlines {
         engine.scene().set_object_visible(*object, debug_visible)?;
     }
+    engine.scene().remove_object(cube)?;
     let mut debug_pressed = false;
 
     engine.scene().set_lighting(SceneLighting {
@@ -127,7 +164,7 @@ fn build_scene(
     })?;
     let initial_direction = if timing_demo {
         // Прогон направлен вдоль платформ, как исходный обзор сцены.
-        -INITIAL_DIRECTION
+        TIMING_DIRECTION
     } else {
         INITIAL_DIRECTION
     }
@@ -140,12 +177,18 @@ fn build_scene(
         fov_y: 55.0_f32.to_radians(),
     };
     let mut follow_camera = camera::FollowCamera::new(start_position);
-    follow_camera.place(
+    let mut corwin_visible = follow_camera.place(
         &mut viewpoint,
         start_position,
         initial_direction,
         &colliders,
     );
+    engine
+        .scene()
+        .set_object_visible(corwin_model, corwin_visible)?;
+    engine
+        .scene()
+        .set_object_visible(corwin_weapons, corwin_visible)?;
     engine.scene().set_viewpoint(viewpoint)?;
 
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
@@ -248,7 +291,12 @@ fn build_scene(
             let mut viewpoint = context.scene().viewpoint();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
             follow_camera.update_height(player.position, time.time_since_last_frame);
-            follow_camera.place(&mut viewpoint, player.position, direction, &colliders);
+            let visible = follow_camera.place(&mut viewpoint, player.position, direction, &colliders);
+            if visible != corwin_visible {
+                context.scene().set_object_visible(corwin_model, visible)?;
+                context.scene().set_object_visible(corwin_weapons, visible)?;
+                corwin_visible = visible;
+            }
             context.scene().set_viewpoint(viewpoint)?;
             Ok(())
         }),
@@ -264,10 +312,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let limiter = devtools::FrameLimiter::from_env()?;
     let timing_demo = devtools::timing_demo_enabled()?;
     let debug_visible = devtools::collider_debug_enabled()?;
+    let physics_demo = devtools::physics_demo_enabled()? || timing_demo;
     let mut engine = Engine::new();
     engine.initialize(WindowDescriptor::new("Amber — тестовая сцена", 1280, 720))?;
-    let result = build_scene(&mut engine, timing_demo, debug_visible, limiter)
-        .and_then(|()| engine.run().map_err(Into::into));
+    let result = build_scene(
+        &mut engine,
+        timing_demo,
+        physics_demo,
+        debug_visible,
+        limiter,
+    )
+    .and_then(|()| engine.run().map_err(Into::into));
     let shutdown = engine.shutdown();
     result?;
     shutdown?;

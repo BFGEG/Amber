@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 const FPS_VARIABLE: &str = "AMBER_MAX_FPS";
 const DEMO_VARIABLE: &str = "AMBER_TIMING_DEMO";
+const PHYSICS_DEMO_VARIABLE: &str = "AMBER_PHYSICS_DEMO";
 const COLLIDER_DEBUG_VARIABLE: &str = "AMBER_COLLIDER_DEBUG";
 
 /// Дополнительное ограничение кадров для проверки; BFGE сам ограничивает их до 60.
@@ -48,6 +49,10 @@ impl FrameLimiter {
 
 pub fn timing_demo_enabled() -> Result<bool, Box<dyn Error>> {
     flag_from_env(DEMO_VARIABLE)
+}
+
+pub fn physics_demo_enabled() -> Result<bool, Box<dyn Error>> {
+    flag_from_env(PHYSICS_DEMO_VARIABLE)
 }
 
 pub fn collider_debug_enabled() -> Result<bool, Box<dyn Error>> {

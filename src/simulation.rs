@@ -122,9 +122,74 @@ impl FixedClock {
 mod tests {
     use super::*;
 
+    fn run_steps(
+        player: &mut Player,
+        movement: Vec3,
+        count: usize,
+        jump: bool,
+        obstacles: &[Aabb],
+    ) {
+        for step in 0..count {
+            player.fixed_update(
+                movement,
+                jump && step == 0,
+                FixedClock::STEP as f32,
+                obstacles,
+            );
+        }
+    }
+
+    fn jump_to(
+        player: &mut Player,
+        direction: Vec3,
+        steps: usize,
+        platform: crate::world::StaticBox,
+        obstacles: &[Aabb],
+    ) {
+        run_steps(player, direction, steps, true, obstacles);
+        run_steps(player, Vec3::ZERO, 45 - steps, false, obstacles);
+        let bounds = platform.bounds();
+        assert!(player.grounded);
+        assert!(player.position.x > bounds.min.x && player.position.x < bounds.max.x);
+        assert!(player.position.z > bounds.min.z && player.position.z < bounds.max.z);
+        assert!((player.position.y - bounds.max.y).abs() < 0.00001);
+    }
+
+    #[test]
+    fn training_course_climbs_through_the_side_turn_after_respawn() {
+        let start = crate::world::START_POSITION;
+        let steps = crate::world::ASCENT;
+        let obstacles = crate::world::course_colliders();
+        let mut player = Player::new(start);
+        run_steps(&mut player, -Vec3::X, 26, false, &obstacles);
+        assert!(!player.grounded);
+        assert!(player.position.y < start.y);
+        assert!(player.position.x < crate::world::LOWER_TERRACE.bounds().min.x);
+        assert!(player.position.x > steps[0].bounds().max.x);
+        run_steps(&mut player, -Vec3::X, 100, false, &obstacles);
+        assert!(player.respawn_if_fallen(start, &obstacles));
+        assert_eq!(player.position, start);
+
+        run_steps(&mut player, -Vec3::X, 16, false, &obstacles);
+        jump_to(&mut player, -Vec3::X, 24, steps[0], &obstacles);
+        jump_to(&mut player, -Vec3::X, 26, steps[1], &obstacles);
+
+        run_steps(&mut player, -Vec3::X, 12, false, &obstacles);
+        assert!(player.position.x > crate::world::COURSE_WALLS[0].bounds().max.x);
+        jump_to(&mut player, -Vec3::Z, 31, steps[2], &obstacles);
+        jump_to(&mut player, -Vec3::X, 26, steps[3], &obstacles);
+        jump_to(
+            &mut player,
+            -Vec3::X,
+            30,
+            crate::world::UPPER_TERRACE,
+            &obstacles,
+        );
+    }
+
     #[test]
     fn respawn_resets_fall_and_remains_stable_at_each_scene_start() {
-        let obstacles = crate::world::static_colliders();
+        let obstacles = crate::world::diagnostic_colliders();
         for start in [
             crate::world::START_POSITION,
             crate::world::TIMING_START_POSITION,
@@ -152,13 +217,13 @@ mod tests {
         player.position.y -= 0.01;
         assert!(player.respawn_if_fallen(
             crate::world::START_POSITION,
-            &crate::world::static_colliders()
+            &crate::world::diagnostic_colliders()
         ));
     }
 
     #[test]
     fn each_scene_start_has_support_and_does_not_intersect_obstacles() {
-        let obstacles = crate::world::static_colliders();
+        let obstacles = crate::world::diagnostic_colliders();
         for start in [
             crate::world::START_POSITION,
             crate::world::TIMING_START_POSITION,
@@ -174,12 +239,12 @@ mod tests {
 
     #[test]
     fn repeated_falls_allow_a_new_jump_without_replaying_held_space() {
-        let obstacles = crate::world::static_colliders();
+        let obstacles = crate::world::diagnostic_colliders();
         let start = crate::world::START_POSITION;
         let mut player = Player::new(start);
         let mut input = crate::input::JumpInput::default();
         for _ in 0..3 {
-            player.position.x = crate::world::GROUND.bounds().min.x - 2.0;
+            player.position.z = crate::world::GROUND.bounds().min.z - 2.0;
             input.sample(true);
             let mut returned = false;
             for _ in 0..180 {
@@ -228,10 +293,15 @@ mod tests {
 
     #[test]
     fn falling_outside_scene_returns_once_at_different_frame_rates() {
-        let obstacles = crate::world::static_colliders();
+        let obstacles = crate::world::diagnostic_colliders();
         for fps in [30, 60, 144] {
             let mut clock = FixedClock::default();
-            let mut player = Player::new(Vec3::new(-44.0, 0.0, 2.0));
+            let outside_ground = Vec3::new(
+                crate::world::START_POSITION.x,
+                0.0,
+                crate::world::GROUND.bounds().min.z - 2.0,
+            );
+            let mut player = Player::new(outside_ground);
             let mut returns = 0;
             for _ in 0..fps * 3 {
                 for _ in 0..clock.advance(1.0 / fps as f32) {
@@ -407,7 +477,7 @@ mod tests {
 
     #[test]
     fn scene_course_supports_sequential_descent_to_the_ground() {
-        let obstacles = crate::world::static_colliders();
+        let obstacles = crate::world::diagnostic_colliders();
         let mut player = Player::new(Vec3::new(-4.0, 3.0, -14.0));
         for (walk_steps, height) in [(30, 2.0), (20, 1.0), (40, 0.0)] {
             for _ in 0..walk_steps {
