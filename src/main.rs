@@ -16,6 +16,7 @@ use bfge::{
 };
 
 const CORWIN_MODEL: &str = concat!(env!("OUT_DIR"), "/corwin.obj");
+const CORWIN_WEAPONS: &str = concat!(env!("OUT_DIR"), "/corwin-weapons.obj");
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
@@ -56,6 +57,7 @@ fn build_scene(
         },
     )?;
     engine.load_model(Path::new(CORWIN_MODEL), corwin)?;
+    engine.load_model(Path::new(CORWIN_WEAPONS), corwin)?;
 
     let sky = engine.scene().create_node(root)?;
     engine.scene().set_node_transform(
