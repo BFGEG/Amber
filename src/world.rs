@@ -37,8 +37,8 @@ impl StaticBox {
 
 // Плоскость земли рисуется на верхней грани этого объёма.
 pub const GROUND: StaticBox = StaticBox {
-    center: Vec3::new(40.0, -0.1, 0.0),
-    size: Vec3::new(160.0, 0.2, 200.0),
+    center: Vec3::new(55.0, -0.1, 0.0),
+    size: Vec3::new(130.0, 0.2, 200.0),
 };
 
 pub const PLATFORMS: [StaticBox; 5] = [
@@ -112,11 +112,70 @@ pub const VERTICAL_COURSE: [StaticBox; 6] = [
     },
 ];
 
-pub fn static_colliders() -> Vec<Aabb> {
+pub const LOWER_TERRACE: StaticBox = StaticBox {
+    center: Vec3::new(101.5, -1.25, 2.0),
+    size: Vec3::new(220.0, 2.5, 76.0),
+};
+
+pub const UPPER_TERRACE: StaticBox = StaticBox {
+    center: Vec3::new(-139.0, 1.25, -4.8),
+    size: Vec3::new(220.0, 5.0, 76.0),
+};
+
+/// С каждой опорой маршрут поднимается на 0,75 м.
+pub const ASCENT: [StaticBox; 4] = [
+    StaticBox {
+        center: Vec3::new(-12.6, -0.25, 2.0),
+        size: Vec3::new(4.0, 2.0, 4.6),
+    },
+    StaticBox {
+        center: Vec3::new(-18.0, 0.50, 2.0),
+        size: Vec3::new(4.4, 2.0, 4.6),
+    },
+    StaticBox {
+        center: Vec3::new(-18.5, 1.25, -4.8),
+        size: Vec3::new(4.2, 2.0, 4.0),
+    },
+    StaticBox {
+        center: Vec3::new(-25.0, 2.00, -4.8),
+        size: Vec3::new(4.4, 2.0, 4.0),
+    },
+];
+
+pub const COURSE_WALLS: [StaticBox; 3] = [
+    // Закрывает прямой путь и оставляет боковой выход со второй опоры.
+    StaticBox {
+        center: Vec3::new(-20.0, 2.9, 2.0),
+        size: Vec3::new(0.4, 2.8, 4.6),
+    },
+    // Вместе с торцевой стеной образует угол для проверки камеры.
+    StaticBox {
+        center: Vec3::new(-18.55, 2.9, 4.1),
+        size: Vec3::new(3.3, 2.8, 0.4),
+    },
+    // Скрывает боковой разрыв и следующую опору со стартовой дорожки.
+    StaticBox {
+        center: Vec3::new(-14.75, 1.50, -3.725),
+        size: Vec3::new(1.1, 6.0, 6.95),
+    },
+];
+
+pub fn diagnostic_blocks() -> impl Iterator<Item = StaticBox> {
+    PLATFORMS.into_iter().chain(WALLS).chain(VERTICAL_COURSE)
+}
+
+pub fn course_colliders() -> Vec<Aabb> {
+    [LOWER_TERRACE, UPPER_TERRACE]
+        .into_iter()
+        .chain(ASCENT)
+        .chain(COURSE_WALLS)
+        .map(StaticBox::bounds)
+        .collect()
+}
+
+pub fn diagnostic_colliders() -> Vec<Aabb> {
     std::iter::once(GROUND)
-        .chain(PLATFORMS)
-        .chain(WALLS)
-        .chain(VERTICAL_COURSE)
+        .chain(diagnostic_blocks())
         .map(StaticBox::bounds)
         .collect()
 }

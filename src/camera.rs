@@ -5,6 +5,7 @@ use crate::world::Aabb;
 
 const CAMERA_DISTANCE: f32 = 10.0;
 const CAMERA_CLEARANCE: f32 = 0.3;
+const MIN_MODEL_VIEW_DISTANCE: f32 = 1.0;
 const HEIGHT_RESPONSE: f32 = 6.0;
 const MAX_HEIGHT_OFFSET: f32 = 0.65;
 const MAX_FRAME_DELTA: f32 = 0.1;
@@ -36,19 +37,22 @@ impl FollowCamera {
             .clamp(feet.y - MAX_HEIGHT_OFFSET, feet.y + MAX_HEIGHT_OFFSET);
     }
 
+    /// Размещает камеру и возвращает видимость модели Корвина с этой дистанции.
     pub fn place(
         &self,
         viewpoint: &mut ViewpointState,
         feet: Vec3,
         direction: Vec3,
         obstacles: &[Aabb],
-    ) {
+    ) -> bool {
         let target = feet + Vec3::Y;
         let offset = Vec3::Y * (self.height - feet.y) - direction.normalize() * CAMERA_DISTANCE;
         let backward = offset.normalize();
         let distance = clear_distance(target, backward, offset.length(), obstacles);
         viewpoint.position = target + backward * distance;
         viewpoint.direction = -backward;
+        // В упоре камера оказывается у корпуса и модель перекрывает обзор.
+        distance >= MIN_MODEL_VIEW_DISTANCE
     }
 }
 
@@ -100,12 +104,38 @@ mod tests {
             fov_y: 55.0_f32.to_radians(),
         };
         let camera = FollowCamera::new(Vec3::ZERO);
-        camera.place(&mut viewpoint, Vec3::ZERO, -Vec3::X, &obstacles);
+        assert!(camera.place(&mut viewpoint, Vec3::ZERO, -Vec3::X, &obstacles));
         assert!(viewpoint.position.distance(Vec3::new(1.7, 1.0, 0.0)) < 0.00001);
         camera.place(&mut viewpoint, Vec3::Z * 2.0, -Vec3::X, &obstacles);
         assert_eq!(viewpoint.position, Vec3::new(10.0, 1.0, 2.0));
         assert_eq!(viewpoint.direction, -Vec3::X);
         assert_eq!(viewpoint.fov_y, 55.0_f32.to_radians());
+    }
+
+    #[test]
+    fn second_platform_corner_shortens_the_camera_arm_when_turning() {
+        let platform = crate::world::ASCENT[1].bounds();
+        let feet = Vec3::new(platform.center().x, platform.max.y, platform.center().z);
+        let target = feet + Vec3::Y;
+        let obstacles = crate::world::course_colliders();
+        let camera = FollowCamera::new(feet);
+        let forward = Vec3::new(-1.0, -0.46, 0.0).normalize();
+        let right = Vec3::new(0.0, -0.46, -1.0).normalize();
+        let mut viewpoint = ViewpointState {
+            position: Vec3::ZERO,
+            direction: forward,
+            roll: 0.0,
+            fov_y: 55.0_f32.to_radians(),
+        };
+        camera.place(&mut viewpoint, feet, forward, &obstacles);
+        assert!((viewpoint.position.distance(target) - CAMERA_DISTANCE).abs() < 0.00001);
+
+        assert!(camera.place(&mut viewpoint, feet, right, &obstacles));
+        let wall = crate::world::COURSE_WALLS[1].bounds();
+        assert!((wall.min.z - viewpoint.position.z - CAMERA_CLEARANCE).abs() < 0.00001);
+
+        camera.place(&mut viewpoint, feet, forward, &obstacles);
+        assert!((viewpoint.position.distance(target) - CAMERA_DISTANCE).abs() < 0.00001);
     }
 
     #[test]
