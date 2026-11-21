@@ -1,5 +1,7 @@
+mod devtools;
+mod simulation;
+
 use std::error::Error;
-use std::f32::consts::PI;
 use std::path::Path;
 
 use bfge::math::{Quat, Vec3};
@@ -13,11 +15,13 @@ const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.o
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
 const MOUSE_SENSITIVITY: f32 = 0.002;
 const CAMERA_DISTANCE: f32 = 10.0;
-const TURN_SMOOTHING: f32 = 10.0;
-const MOVE_SPEED: f32 = 13.0;
 const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 
-fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
+fn build_scene(
+    engine: &mut Engine,
+    timing_demo: bool,
+    mut limiter: devtools::FrameLimiter,
+) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
     let ground = engine.scene().create_node(root)?;
     engine.scene().set_node_transform(
@@ -31,11 +35,11 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     engine.load_model(Path::new(GROUND_MODEL), ground)?;
 
     let corwin = engine.scene().create_node(root)?;
-    let mut corwin_position = INITIAL_POSITION;
+    let mut player = simulation::Player::new(INITIAL_POSITION);
     engine.scene().set_node_transform(
         corwin,
         Transform {
-            translation: corwin_position,
+            translation: player.position,
             rotation: Quat::IDENTITY,
             ..Transform::default()
         },
@@ -121,16 +125,28 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
             color: Vec3::splat(0.8),
         },
     })?;
-    let initial_direction = INITIAL_DIRECTION.normalize();
+    let initial_direction = if timing_demo {
+        // Прогон направлен вдоль платформ, как исходный обзор сцены.
+        -INITIAL_DIRECTION
+    } else {
+        INITIAL_DIRECTION
+    }
+    .normalize();
 
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
-    let mut corwin_rotation = Quat::IDENTITY;
+    let mut clock = simulation::FixedClock::default();
+    let mut demo_steps = 0;
+    let mut demo_frames = 0;
+    let mut demo_elapsed = 0.0;
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
             let input = context.input();
+            let Some(steps) = clock.frame_steps(time.time_since_last_frame, input.is_focused()) else {
+                return Ok(());
+            };
 
-            let (dx, dy) = input.mouse_delta();
+            let (dx, dy) = if timing_demo { (0.0, 0.0) } else { input.mouse_delta() };
             pitch -= dy as f32 * MOUSE_SENSITIVITY;
             yaw += dx as f32 * MOUSE_SENSITIVITY;
 
@@ -154,43 +170,63 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
                 movement -= right;
             }
 
-            if movement.length_squared() > 0.0 {
-                let movement = movement.normalize();
-                let target_rotation =
-                    Quat::from_rotation_y(movement.x.atan2(movement.z) + PI / 2.0);
-
-                // Плавно поворачиваем Корвина к направлению движения.
-                let turn_blend = 1.0 - (-TURN_SMOOTHING * time.time_since_last_frame).exp();
-                corwin_rotation = corwin_rotation.slerp(target_rotation, turn_blend);
-                corwin_position += movement * MOVE_SPEED * time.time_since_last_frame;
-
-                context.scene().set_node_transform(
-                    corwin,
-                    Transform {
-                        translation: corwin_position,
-                        rotation: corwin_rotation,
-                        ..Transform::default()
-                    },
-                )?;
+            const DEMO_STEPS: usize = 120;
+            if timing_demo {
+                movement = initial_direction;
+                if demo_steps < DEMO_STEPS {
+                    demo_frames += 1;
+                    demo_elapsed += f64::from(time.time_since_last_frame);
+                }
             }
+            for _ in 0..steps {
+                if timing_demo && demo_steps == DEMO_STEPS {
+                    break;
+                }
+                player.fixed_update(movement, simulation::FixedClock::STEP as f32);
+                if timing_demo {
+                    demo_steps += 1;
+                    if demo_steps == DEMO_STEPS {
+                        println!(
+                            "Прогон: 120 шагов, 2 с симуляции, {:.3} м; {:.2} с активных кадров, {:.1} FPS",
+                            player.position.distance(INITIAL_POSITION),
+                            demo_elapsed,
+                            f64::from(demo_frames) / demo_elapsed,
+                        );
+                    }
+                }
+            }
+            context.scene().set_node_transform(
+                corwin,
+                Transform {
+                    translation: player.position,
+                    rotation: player.rotation,
+                    ..Transform::default()
+                },
+            )?;
 
             let mut viewpoint = context.scene().viewpoint();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
-            viewpoint.position = corwin_position - direction.normalize() * CAMERA_DISTANCE
+            viewpoint.position = player.position - direction.normalize() * CAMERA_DISTANCE
                 + Vec3::new(0.0, 1.0, 0.0);
             viewpoint.direction = direction;
             context.scene().set_viewpoint(viewpoint)?;
             Ok(())
         }),
-        frame_ended: Box::new(|_, _| Ok(())),
+        frame_ended: Box::new(move |_, _| {
+            limiter.wait();
+            Ok(())
+        }),
     })?;
     Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let limiter = devtools::FrameLimiter::from_env()?;
+    let timing_demo = devtools::timing_demo_enabled()?;
     let mut engine = Engine::new();
     engine.initialize(WindowDescriptor::new("Amber — тестовая сцена", 1280, 720))?;
-    let result = build_scene(&mut engine).and_then(|()| engine.run().map_err(Into::into));
+    let result = build_scene(&mut engine, timing_demo, limiter)
+        .and_then(|()| engine.run().map_err(Into::into));
     let shutdown = engine.shutdown();
     result?;
     shutdown?;

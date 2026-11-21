@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "BFGE"
 version = "0.1.0"
-source = "git+https://github.com/BFGEG/BFGE.git?rev=fe6f6ba1c4d1bab74b02d3c1e2deaff2be30426d#fe6f6ba1c4d1bab74b02d3c1e2deaff2be30426d"
+source = "git+https://github.com/BFGEG/BFGE.git?branch=main#a8d9b29d45effb22769ac0129aa1c53098f4c866"
 dependencies = [
  "base64",
  "bytemuck",
