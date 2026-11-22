@@ -1,15 +1,23 @@
 mod skybox;
 
 use std::error::Error;
+use std::f32::consts::PI;
 use std::path::Path;
 
-use bfge::math::Vec3;
+use bfge::math::{Quat, Vec3};
 use bfge::{
-    DirectionalLight, Engine, EngineApi, SceneLighting, Transform, ViewpointState, WindowDescriptor,
+    DirectionalLight, Engine, EngineApi, EngineEvent, KeyCode, SceneLighting, Transform,
+    ViewpointState, WindowDescriptor,
 };
 
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
+const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
+const MOUSE_SENSITIVITY: f32 = 0.002;
+const CAMERA_DISTANCE: f32 = 10.0;
+const TURN_SMOOTHING: f32 = 10.0;
+const MOVE_SPEED: f32 = 13.0;
+const INITIAL_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 
 fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let root = engine.scene().root_node();
@@ -25,9 +33,14 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     engine.load_model(Path::new(GROUND_MODEL), ground)?;
 
     let corwin = engine.scene().create_node(root)?;
+    let mut corwin_position = INITIAL_POSITION;
     engine.scene().set_node_transform(
         corwin,
-        Transform::from_translation(Vec3::new(-4.0, 0.0, 2.0)),
+        Transform {
+            translation: corwin_position,
+            rotation: Quat::IDENTITY,
+            ..Transform::default()
+        },
     )?;
     let torso = engine.scene().create_node(corwin)?;
     engine.scene().set_node_transform(
@@ -41,7 +54,6 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     let cube = engine.load_model(Path::new(CUBE_MODEL), torso)?;
     engine.scene().set_object_color(cube, [0.35, 0.05, 0.05])?;
 
-    // Простые части фигуры показывают положение рук, ног и головы.
     let body_parts = [
         ([0.0, 1.55, 0.0], [0.35, 0.4, 0.35], [0.75, 0.45, 0.3]),
         ([0.0, 1.0, -0.37], [0.26, 0.65, 0.19], [0.18, 0.025, 0.025]),
@@ -63,7 +75,6 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
         engine.scene().set_object_color(object, color)?;
     }
 
-    // Маркер Корвина и пять платформ используют общий меш куба.
     let blocks = [
         ([-0.5, 0.25, -1.0], [1.4, 0.5, 1.4]),
         ([1.5, 0.5, 2.5], [1.4, 1.0, 1.4]),
@@ -90,6 +101,7 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
     engine.scene().set_viewpoint(ViewpointState {
         position: Vec3::new(-10.0, 3.1, 2.0),
         direction: Vec3::new(1.0, -0.22, 0.0),
+        roll: 0.0,
         fov_y: 55.0_f32.to_radians(),
     })?;
     engine.scene().set_lighting(SceneLighting {
@@ -98,6 +110,69 @@ fn build_scene(engine: &mut Engine) -> Result<(), Box<dyn Error>> {
             direction: Vec3::new(-0.5, -1.0, -0.7),
             color: Vec3::splat(0.8),
         },
+    })?;
+    let initial_direction = INITIAL_DIRECTION.normalize();
+
+    let mut yaw = initial_direction.x.atan2(-initial_direction.z);
+    let mut pitch = initial_direction.y.asin();
+    let mut corwin_rotation = Quat::IDENTITY;
+    engine.add_event(EngineEvent {
+        frame_started: Box::new(move |context, time| {
+            let input = context.input();
+
+            let (dx, dy) = input.mouse_delta();
+            pitch -= dy as f32 * MOUSE_SENSITIVITY;
+            yaw += dx as f32 * MOUSE_SENSITIVITY;
+
+            let (yaw_sin, yaw_cos) = yaw.sin_cos();
+            let (pitch_sin, pitch_cos) = pitch.sin_cos();
+
+            let forward = Vec3::new(yaw_sin, 0.0, -yaw_cos);
+            let right = Vec3::new(yaw_cos, 0.0, yaw_sin);
+
+            let mut movement = Vec3::ZERO;
+            if input.is_key_pressed(KeyCode::KeyW) {
+                movement += forward;
+            }
+            if input.is_key_pressed(KeyCode::KeyS) {
+                movement -= forward;
+            }
+            if input.is_key_pressed(KeyCode::KeyD) {
+                movement += right;
+            }
+            if input.is_key_pressed(KeyCode::KeyA) {
+                movement -= right;
+            }
+
+            if movement.length_squared() > 0.0 {
+                let movement = movement.normalize();
+                let target_rotation =
+                    Quat::from_rotation_y(movement.x.atan2(movement.z) + PI / 2.0);
+
+                // Плавно поворачиваем Корвина к направлению движения.
+                let turn_blend = 1.0 - (-TURN_SMOOTHING * time.time_since_last_frame).exp();
+                corwin_rotation = corwin_rotation.slerp(target_rotation, turn_blend);
+                corwin_position += movement * MOVE_SPEED * time.time_since_last_frame;
+
+                context.scene().set_node_transform(
+                    corwin,
+                    Transform {
+                        translation: corwin_position,
+                        rotation: corwin_rotation,
+                        ..Transform::default()
+                    },
+                )?;
+            }
+
+            let mut viewpoint = context.scene().viewpoint();
+            let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
+            viewpoint.position = corwin_position - direction.normalize() * CAMERA_DISTANCE
+                + Vec3::new(0.0, 1.0, 0.0);
+            viewpoint.direction = direction;
+            context.scene().set_viewpoint(viewpoint)?;
+            Ok(())
+        }),
+        frame_ended: Box::new(|_, _| Ok(())),
     })?;
     skybox::add_to_scene(engine)?;
     Ok(())
