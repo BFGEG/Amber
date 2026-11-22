@@ -5,6 +5,9 @@ use crate::world::Aabb;
 // Постоянный объём охватывает фигуру при любом горизонтальном повороте.
 pub const PLAYER_HALF_WIDTH: f32 = 0.5;
 pub const PLAYER_HEIGHT: f32 = 1.75;
+// Опора считается по стопам, а не по всему телу: иначе персонаж висит над краем.
+// Полуширина покрывает низ модели Корвина: 0,26 м по x и 0,21 м по z.
+pub const FOOT_SUPPORT_HALF_WIDTH: f32 = 0.26;
 const CONTACT_GAP: f32 = 0.0001;
 const TIME_EPSILON: f32 = 0.00001;
 const HORIZONTAL_AXES: [usize; 2] = [0, 2];
@@ -22,36 +25,59 @@ pub enum VerticalContact {
     Ceiling,
 }
 
-fn overlaps_horizontally(feet: Vec3, obstacle: Aabb) -> bool {
-    let player = player_bounds(feet);
-    player.min.x < obstacle.max.x
-        && player.max.x > obstacle.min.x
-        && player.min.z < obstacle.max.z
-        && player.max.z > obstacle.min.z
+fn overlaps_horizontally(feet: Vec3, obstacle: Aabb, half_width: f32) -> bool {
+    feet.x - half_width < obstacle.max.x
+        && feet.x + half_width > obstacle.min.x
+        && feet.z - half_width < obstacle.max.z
+        && feet.z + half_width > obstacle.min.z
+}
+
+// Стопа должна целиком помещаться на площадке, а не просто пересекаться с ней.
+fn footprint_inside(feet: Vec3, obstacle: Aabb, half_width: f32) -> bool {
+    feet.x - half_width >= obstacle.min.x
+        && feet.x + half_width <= obstacle.max.x
+        && feet.z - half_width >= obstacle.min.z
+        && feet.z + half_width <= obstacle.max.z
 }
 
 pub fn has_support(feet: Vec3, obstacles: &[Aabb]) -> bool {
     obstacles.iter().any(|obstacle| {
-        overlaps_horizontally(feet, *obstacle) && (feet.y - obstacle.max.y).abs() <= CONTACT_GAP
+        footprint_inside(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
+            && (feet.y - obstacle.max.y).abs() <= CONTACT_GAP
+    })
+}
+
+/// Частичное касание стопы: используется при падении и удержании на уступе.
+pub fn has_partial_support(feet: Vec3, obstacles: &[Aabb]) -> bool {
+    obstacles.iter().any(|obstacle| {
+        overlaps_horizontally(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
+            && (feet.y - obstacle.max.y).abs() <= CONTACT_GAP
     })
 }
 
 /// Проверяет весь вертикальный путь ног и головы, выбирая ближайшую поверхность.
+/// При падении сверху достаточно частичного касания стопы; на уже достигнутой
+/// поверхности опора удерживается только целой стопой, кроме удержания на уступе.
 pub fn move_vertical(
     mut feet: Vec3,
     displacement: f32,
     obstacles: &[Aabb],
+    allow_partial_ground: bool,
 ) -> (Vec3, Option<VerticalContact>) {
     let mut target = feet.y + displacement;
     let mut contact = None;
     for obstacle in obstacles {
-        if !overlaps_horizontally(feet, *obstacle) {
-            continue;
-        }
-        if displacement < 0.0 && feet.y >= obstacle.max.y && target <= obstacle.max.y {
+        let landing_from_above = feet.y > obstacle.max.y;
+        let touches = if landing_from_above || allow_partial_ground {
+            overlaps_horizontally(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
+        } else {
+            footprint_inside(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
+        };
+        if displacement < 0.0 && touches && feet.y >= obstacle.max.y && target <= obstacle.max.y {
             target = obstacle.max.y;
             contact = Some(VerticalContact::Ground);
         } else if displacement > 0.0
+            && overlaps_horizontally(feet, *obstacle, PLAYER_HALF_WIDTH)
             && feet.y + PLAYER_HEIGHT <= obstacle.min.y
             && target + PLAYER_HEIGHT >= obstacle.min.y
         {
@@ -152,7 +178,7 @@ mod tests {
             max: Vec3::new(2.0, 2.1, 2.0),
         };
         for obstacles in [[lower, upper], [upper, lower]] {
-            let (position, contact) = move_vertical(Vec3::Y * 5.0, -100.0, &obstacles);
+            let (position, contact) = move_vertical(Vec3::Y * 5.0, -100.0, &obstacles, false);
             assert_eq!(position.y, upper.max.y);
             assert_eq!(contact, Some(VerticalContact::Ground));
         }
@@ -164,8 +190,47 @@ mod tests {
             min: Vec3::ZERO,
             max: Vec3::ONE,
         };
+        let supported = 1.0 - FOOT_SUPPORT_HALF_WIDTH - 0.00001;
+        let overhanging = 1.0 - FOOT_SUPPORT_HALF_WIDTH + 0.00001;
         assert!(has_support(Vec3::new(0.5, 1.0, 0.5), &[block]));
-        assert!(!has_support(Vec3::new(1.5, 1.0, 0.5), &[block]));
+        assert!(has_support(Vec3::new(supported, 1.0, 0.5), &[block]));
+        assert!(!has_support(Vec3::new(overhanging, 1.0, 0.5), &[block]));
+        assert!(!has_support(Vec3::new(1.3, 1.0, 0.5), &[block]));
+    }
+
+    #[test]
+    fn landing_accepts_partial_foot_but_standing_requires_whole_foot() {
+        let block = Aabb {
+            min: Vec3::ZERO,
+            max: Vec3::ONE,
+        };
+        let supported = 1.0 - FOOT_SUPPORT_HALF_WIDTH - 0.00001;
+        let partial = 1.0 + FOOT_SUPPORT_HALF_WIDTH - 0.05;
+        let outside = 1.0 + FOOT_SUPPORT_HALF_WIDTH + 0.05;
+
+        assert!(!has_support(Vec3::new(partial, 1.0, 0.5), &[block]));
+        assert!(has_partial_support(Vec3::new(partial, 1.0, 0.5), &[block]));
+
+        let (position, contact) =
+            move_vertical(Vec3::new(partial, 2.0, 0.5), -10.0, &[block], false);
+        assert_eq!(contact, Some(VerticalContact::Ground));
+        assert_eq!(position.y, block.max.y);
+
+        let (position, contact) =
+            move_vertical(Vec3::new(outside, 2.0, 0.5), -10.0, &[block], false);
+        assert_eq!(contact, None);
+        assert!((position.y + 8.0).abs() < 0.00001);
+
+        let (position, contact) =
+            move_vertical(Vec3::new(supported, 2.0, 0.5), -10.0, &[block], false);
+        assert_eq!(contact, Some(VerticalContact::Ground));
+        assert_eq!(position.y, block.max.y);
+
+        let (_, contact) = move_vertical(Vec3::new(partial, 1.0, 0.5), -0.01, &[block], false);
+        assert_eq!(contact, None);
+
+        let (_, contact) = move_vertical(Vec3::new(partial, 1.0, 0.5), -0.01, &[block], true);
+        assert_eq!(contact, Some(VerticalContact::Ground));
     }
 
     fn wall() -> Aabb {
