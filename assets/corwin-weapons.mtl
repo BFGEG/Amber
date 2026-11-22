@@ -1,0 +1,11 @@
+newmtl belt
+Kd 1 1 1
+map_Kd corwin-belt.png
+
+newmtl sword
+Kd 1 1 1
+map_Kd corwin-sword.png
+
+newmtl grip
+Kd 1 1 1
+map_Kd corwin-sword-grip.png
