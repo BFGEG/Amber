@@ -4,6 +4,7 @@ mod collision;
 mod devtools;
 mod input;
 mod simulation;
+mod skybox;
 mod world;
 
 use std::error::Error;
@@ -68,18 +69,6 @@ fn build_scene(
     )?;
     let corwin_model = engine.load_model(Path::new(CORWIN_MODEL), corwin)?;
     let corwin_weapons = engine.load_model(Path::new(CORWIN_WEAPONS), corwin)?;
-
-    let sky = engine.scene().create_node(root)?;
-    engine.scene().set_node_transform(
-        sky,
-        Transform {
-            translation: Vec3::new(70.0, 50.0, 2.0),
-            scale: Vec3::new(0.1, 100.0, 160.0),
-            ..Transform::default()
-        },
-    )?;
-    let backdrop = engine.load_model(Path::new(CUBE_MODEL), sky)?;
-    engine.scene().set_object_color(backdrop, [0.7, 1.4, 2.4])?;
 
     let cube = engine.load_model(Path::new(CUBE_MODEL), root)?;
 
@@ -305,6 +294,7 @@ fn build_scene(
             Ok(())
         }),
     })?;
+    skybox::add_to_scene(engine)?;
     Ok(())
 }
 
