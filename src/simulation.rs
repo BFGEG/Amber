@@ -234,6 +234,8 @@ mod tests {
     fn training_course_climbs_through_the_side_turn_after_respawn() {
         let start = crate::world::START_POSITION;
         let platforms = crate::world::ASCENT;
+        let lower = crate::world::LOWER_TERRACE.bounds();
+        let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
         let obstacles = crate::world::course_colliders();
         let mut player = Player::new(start);
 
@@ -242,10 +244,11 @@ mod tests {
             -Vec3::X,
             &obstacles,
             120,
-            |player| !player.grounded
+            |player| player.position.x <= lower.min.x - 0.1
         ));
+        assert!(!player.grounded);
         assert!(player.position.y < start.y);
-        assert!(player.position.x < crate::world::LOWER_TERRACE.bounds().min.x);
+        assert!(player.position.x < lower.min.x);
         assert!(player.position.x > platforms[0].bounds().max.x);
 
         let mut returned = false;
@@ -264,7 +267,7 @@ mod tests {
             -Vec3::X,
             &obstacles,
             120,
-            |player| player.position.x <= -8.6
+            |player| player.position.x <= lower.min.x + foot + 0.1
         ));
         jump_to_platform(&mut player, -Vec3::X, platforms[0], &obstacles);
 
@@ -273,7 +276,7 @@ mod tests {
             -Vec3::X,
             &obstacles,
             120,
-            |player| player.position.x <= -14.4
+            |player| player.position.x <= platforms[0].bounds().min.x + foot + 0.1
         ));
         jump_to_platform(&mut player, -Vec3::X, platforms[1], &obstacles);
 
@@ -282,7 +285,7 @@ mod tests {
             -Vec3::Z,
             &obstacles,
             120,
-            |player| player.position.z <= -0.2
+            |player| player.position.z <= platforms[1].bounds().min.z + foot + 0.1
         ));
         jump_to_platform(&mut player, -Vec3::Z, platforms[2], &obstacles);
 
@@ -291,7 +294,7 @@ mod tests {
             -Vec3::X,
             &obstacles,
             120,
-            |player| player.position.x <= -20.1
+            |player| player.position.x <= platforms[2].bounds().min.x + foot + 0.1
         ));
         jump_to_platform(&mut player, -Vec3::X, platforms[3], &obstacles);
 
@@ -300,7 +303,7 @@ mod tests {
             -Vec3::X,
             &obstacles,
             120,
-            |player| player.position.x <= -26.8
+            |player| player.position.x <= platforms[3].bounds().min.x + foot + 0.1
         ));
         jump_to_platform(
             &mut player,
@@ -769,6 +772,7 @@ mod tests {
             min: Vec3::new(-10.0, -1.0, -2.0),
             max: Vec3::new(10.0, 0.0, 2.0),
         };
+        let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
         let obstacles = [platform];
         let mut player = Player::new(Vec3::new(-8.0, 0.0, 0.0));
         assert!(run_until(
@@ -776,12 +780,12 @@ mod tests {
             Vec3::X,
             &obstacles,
             200,
-            |player| player.position.x >= 9.5
+            |player| player.position.x >= 9.2
         ));
         run_steps(&mut player, Vec3::ZERO, 60, false, &obstacles);
         assert!(player.grounded);
         assert_eq!(player.position.y, 0.0);
-        assert!(player.position.x <= 10.0 + crate::collision::FOOT_SUPPORT_HALF_WIDTH + 0.00001);
+        assert!(player.position.x <= 10.0 - foot + 0.00001);
         assert!(player.horizontal_velocity.length() < 0.00001);
     }
 
@@ -791,13 +795,14 @@ mod tests {
             min: Vec3::new(-10.0, -1.0, -2.0),
             max: Vec3::new(10.0, 0.0, 2.0),
         };
+        let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
         let obstacles = [platform];
 
-        let mut supported = Player::new(Vec3::new(10.1, 0.0, 0.0));
+        let mut supported = Player::new(Vec3::new(10.0 - foot - 0.05, 0.0, 0.0));
         step(&mut supported, Vec3::ZERO, false, &obstacles);
         assert!(supported.grounded);
 
-        let mut overhanging = Player::new(Vec3::new(10.3, 0.0, 0.0));
+        let mut overhanging = Player::new(Vec3::new(10.0 - foot + 0.05, 0.0, 0.0));
         step(&mut overhanging, Vec3::ZERO, false, &obstacles);
         assert!(!overhanging.grounded);
         assert!(overhanging.position.y < 0.0);
@@ -809,8 +814,9 @@ mod tests {
             min: Vec3::new(-10.0, -1.0, -2.0),
             max: Vec3::new(10.0, 0.0, 2.0),
         };
+        let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
         let obstacles = [platform];
-        let mut player = Player::new(Vec3::new(9.8, 0.0, 0.0));
+        let mut player = Player::new(Vec3::new(10.0 - foot - 0.05, 0.0, 0.0));
         player.horizontal_velocity = Vec3::X * MOVE_SPEED;
         for _ in 0..5 {
             step(&mut player, Vec3::X, false, &obstacles);
@@ -825,8 +831,14 @@ mod tests {
             min: Vec3::new(0.0, 0.0, -2.0),
             max: Vec3::new(10.0, 1.0, 2.0),
         };
+        let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
         let obstacles = [platform];
-        let mut player = Player::new(Vec3::new(10.3, 2.0, 0.0));
+        let mut landed = Player::new(Vec3::new(10.0 - foot - 0.05, 2.0, 0.0));
+        run_steps(&mut landed, Vec3::ZERO, 30, false, &obstacles);
+        assert!(landed.grounded);
+        assert_eq!(landed.position.y, 1.0);
+
+        let mut player = Player::new(Vec3::new(10.0 - foot + 0.05, 2.0, 0.0));
         run_steps(&mut player, Vec3::ZERO, 30, false, &obstacles);
         assert!(!player.grounded);
         assert!(player.position.y < 0.5);
