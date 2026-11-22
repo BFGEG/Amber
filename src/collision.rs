@@ -47,20 +47,33 @@ pub fn has_support(feet: Vec3, obstacles: &[Aabb]) -> bool {
     })
 }
 
+/// Частичное касание стопы: используется при падении и удержании на уступе.
+pub fn has_partial_support(feet: Vec3, obstacles: &[Aabb]) -> bool {
+    obstacles.iter().any(|obstacle| {
+        overlaps_horizontally(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
+            && (feet.y - obstacle.max.y).abs() <= CONTACT_GAP
+    })
+}
+
 /// Проверяет весь вертикальный путь ног и головы, выбирая ближайшую поверхность.
+/// При падении сверху достаточно частичного касания стопы; на уже достигнутой
+/// поверхности опора удерживается только целой стопой, кроме удержания на уступе.
 pub fn move_vertical(
     mut feet: Vec3,
     displacement: f32,
     obstacles: &[Aabb],
+    allow_partial_ground: bool,
 ) -> (Vec3, Option<VerticalContact>) {
     let mut target = feet.y + displacement;
     let mut contact = None;
     for obstacle in obstacles {
-        if displacement < 0.0
-            && footprint_inside(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
-            && feet.y >= obstacle.max.y
-            && target <= obstacle.max.y
-        {
+        let landing_from_above = feet.y > obstacle.max.y;
+        let touches = if landing_from_above || allow_partial_ground {
+            overlaps_horizontally(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
+        } else {
+            footprint_inside(feet, *obstacle, FOOT_SUPPORT_HALF_WIDTH)
+        };
+        if displacement < 0.0 && touches && feet.y >= obstacle.max.y && target <= obstacle.max.y {
             target = obstacle.max.y;
             contact = Some(VerticalContact::Ground);
         } else if displacement > 0.0
@@ -165,7 +178,7 @@ mod tests {
             max: Vec3::new(2.0, 2.1, 2.0),
         };
         for obstacles in [[lower, upper], [upper, lower]] {
-            let (position, contact) = move_vertical(Vec3::Y * 5.0, -100.0, &obstacles);
+            let (position, contact) = move_vertical(Vec3::Y * 5.0, -100.0, &obstacles, false);
             assert_eq!(position.y, upper.max.y);
             assert_eq!(contact, Some(VerticalContact::Ground));
         }
@@ -186,24 +199,38 @@ mod tests {
     }
 
     #[test]
-    fn landing_requires_the_whole_foot_on_the_platform() {
+    fn landing_accepts_partial_foot_but_standing_requires_whole_foot() {
         let block = Aabb {
             min: Vec3::ZERO,
             max: Vec3::ONE,
         };
         let supported = 1.0 - FOOT_SUPPORT_HALF_WIDTH - 0.00001;
-        let overhanging = 1.0 - FOOT_SUPPORT_HALF_WIDTH + 0.00001;
-        let (position, contact) = move_vertical(Vec3::new(1.3, 2.0, 0.5), -10.0, &[block]);
-        assert_eq!(contact, None);
-        assert!((position.y + 8.0).abs() < 0.00001);
+        let partial = 1.0 + FOOT_SUPPORT_HALF_WIDTH - 0.05;
+        let outside = 1.0 + FOOT_SUPPORT_HALF_WIDTH + 0.05;
 
-        let (position, contact) = move_vertical(Vec3::new(overhanging, 2.0, 0.5), -10.0, &[block]);
-        assert_eq!(contact, None);
-        assert!((position.y + 8.0).abs() < 0.00001);
+        assert!(!has_support(Vec3::new(partial, 1.0, 0.5), &[block]));
+        assert!(has_partial_support(Vec3::new(partial, 1.0, 0.5), &[block]));
 
-        let (position, contact) = move_vertical(Vec3::new(supported, 2.0, 0.5), -10.0, &[block]);
+        let (position, contact) =
+            move_vertical(Vec3::new(partial, 2.0, 0.5), -10.0, &[block], false);
         assert_eq!(contact, Some(VerticalContact::Ground));
         assert_eq!(position.y, block.max.y);
+
+        let (position, contact) =
+            move_vertical(Vec3::new(outside, 2.0, 0.5), -10.0, &[block], false);
+        assert_eq!(contact, None);
+        assert!((position.y + 8.0).abs() < 0.00001);
+
+        let (position, contact) =
+            move_vertical(Vec3::new(supported, 2.0, 0.5), -10.0, &[block], false);
+        assert_eq!(contact, Some(VerticalContact::Ground));
+        assert_eq!(position.y, block.max.y);
+
+        let (_, contact) = move_vertical(Vec3::new(partial, 1.0, 0.5), -0.01, &[block], false);
+        assert_eq!(contact, None);
+
+        let (_, contact) = move_vertical(Vec3::new(partial, 1.0, 0.5), -0.01, &[block], true);
+        assert_eq!(contact, Some(VerticalContact::Ground));
     }
 
     fn wall() -> Aabb {

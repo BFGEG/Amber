@@ -21,6 +21,8 @@ pub struct Player {
     pub horizontal_velocity: Vec3,
     pub vertical_velocity: f32,
     pub grounded: bool,
+    // После приземления на край стопа может оставаться на уступе частично.
+    landed_on_edge: bool,
 }
 
 impl Player {
@@ -31,6 +33,7 @@ impl Player {
             horizontal_velocity: Vec3::ZERO,
             vertical_velocity: 0.0,
             grounded: false,
+            landed_on_edge: false,
         }
     }
 
@@ -75,13 +78,19 @@ impl Player {
         dt: f32,
         obstacles: &[Aabb],
     ) {
-        self.grounded =
-            self.vertical_velocity <= 0.0 && collision::has_support(self.position, obstacles);
+        let full_support = collision::has_support(self.position, obstacles);
+        let partial_support = collision::has_partial_support(self.position, obstacles);
+        self.grounded = self.vertical_velocity <= 0.0
+            && (full_support || (self.landed_on_edge && partial_support));
+        if full_support || !self.grounded {
+            self.landed_on_edge = false;
+        }
         if self.grounded {
             self.vertical_velocity = 0.0;
             if jump_pressed {
                 self.vertical_velocity = JUMP_SPEED;
                 self.grounded = false;
+                self.landed_on_edge = false;
             }
         }
         let input_direction = if movement.length_squared() > 0.0 {
@@ -103,9 +112,17 @@ impl Player {
         self.horizontal_velocity = (self.position - previous_position) / dt;
         let fall = self.vertical_velocity * dt - 0.5 * GRAVITY * dt * dt;
         self.vertical_velocity -= GRAVITY * dt;
-        let (position, contact) = collision::move_vertical(self.position, fall, obstacles);
+        let (position, contact) =
+            collision::move_vertical(self.position, fall, obstacles, self.landed_on_edge);
         self.position = position;
         self.grounded = contact == Some(collision::VerticalContact::Ground);
+        if self.grounded {
+            let full_support = collision::has_support(self.position, obstacles);
+            self.landed_on_edge =
+                !full_support && collision::has_partial_support(self.position, obstacles);
+        } else {
+            self.landed_on_edge = false;
+        }
         if contact.is_some() {
             self.vertical_velocity = 0.0;
         }
@@ -826,22 +843,32 @@ mod tests {
     }
 
     #[test]
-    fn landing_past_foot_support_does_not_snap_to_the_platform() {
+    fn partial_foot_landing_stays_on_the_platform() {
         let platform = Aabb {
             min: Vec3::new(0.0, 0.0, -2.0),
             max: Vec3::new(10.0, 1.0, 2.0),
         };
         let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
         let obstacles = [platform];
-        let mut landed = Player::new(Vec3::new(10.0 - foot - 0.05, 2.0, 0.0));
+        let partial_x = 10.0 + foot - 0.05;
+        let mut landed = Player::new(Vec3::new(partial_x, 2.0, 0.0));
         run_steps(&mut landed, Vec3::ZERO, 30, false, &obstacles);
         assert!(landed.grounded);
         assert_eq!(landed.position.y, 1.0);
 
-        let mut player = Player::new(Vec3::new(10.0 - foot + 0.05, 2.0, 0.0));
-        run_steps(&mut player, Vec3::ZERO, 30, false, &obstacles);
-        assert!(!player.grounded);
-        assert!(player.position.y < 0.5);
+        step(&mut landed, Vec3::ZERO, false, &obstacles);
+        assert!(landed.grounded);
+        assert_eq!(landed.position.y, 1.0);
+
+        for _ in 0..10 {
+            step(&mut landed, Vec3::X, false, &obstacles);
+        }
+        assert!(!landed.grounded);
+
+        let mut outside = Player::new(Vec3::new(10.0 + foot + 0.05, 2.0, 0.0));
+        run_steps(&mut outside, Vec3::ZERO, 30, false, &obstacles);
+        assert!(!outside.grounded);
+        assert!(outside.position.y < 0.5);
     }
 
     #[test]
