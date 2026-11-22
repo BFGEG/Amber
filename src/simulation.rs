@@ -264,7 +264,7 @@ mod tests {
             -Vec3::X,
             &obstacles,
             120,
-            |player| player.position.x <= -8.8
+            |player| player.position.x <= -8.6
         ));
         jump_to_platform(&mut player, -Vec3::X, platforms[0], &obstacles);
 
@@ -776,13 +776,60 @@ mod tests {
             Vec3::X,
             &obstacles,
             200,
-            |player| player.position.x >= 8.5
+            |player| player.position.x >= 9.5
         ));
         run_steps(&mut player, Vec3::ZERO, 60, false, &obstacles);
         assert!(player.grounded);
         assert_eq!(player.position.y, 0.0);
-        assert!(player.position.x < 10.5);
+        assert!(player.position.x <= 10.0 + crate::collision::FOOT_SUPPORT_HALF_WIDTH + 0.00001);
         assert!(player.horizontal_velocity.length() < 0.00001);
+    }
+
+    #[test]
+    fn player_falls_when_center_passes_foot_support_at_edge() {
+        let platform = Aabb {
+            min: Vec3::new(-10.0, -1.0, -2.0),
+            max: Vec3::new(10.0, 0.0, 2.0),
+        };
+        let obstacles = [platform];
+
+        let mut supported = Player::new(Vec3::new(10.1, 0.0, 0.0));
+        step(&mut supported, Vec3::ZERO, false, &obstacles);
+        assert!(supported.grounded);
+
+        let mut overhanging = Player::new(Vec3::new(10.3, 0.0, 0.0));
+        step(&mut overhanging, Vec3::ZERO, false, &obstacles);
+        assert!(!overhanging.grounded);
+        assert!(overhanging.position.y < 0.0);
+    }
+
+    #[test]
+    fn walking_past_the_edge_starts_falling_once_feet_leave_the_platform() {
+        let platform = Aabb {
+            min: Vec3::new(-10.0, -1.0, -2.0),
+            max: Vec3::new(10.0, 0.0, 2.0),
+        };
+        let obstacles = [platform];
+        let mut player = Player::new(Vec3::new(9.8, 0.0, 0.0));
+        player.horizontal_velocity = Vec3::X * MOVE_SPEED;
+        for _ in 0..5 {
+            step(&mut player, Vec3::X, false, &obstacles);
+        }
+        assert!(!player.grounded);
+        assert!(player.position.y < 0.0);
+    }
+
+    #[test]
+    fn landing_past_foot_support_does_not_snap_to_the_platform() {
+        let platform = Aabb {
+            min: Vec3::new(0.0, 0.0, -2.0),
+            max: Vec3::new(10.0, 1.0, 2.0),
+        };
+        let obstacles = [platform];
+        let mut player = Player::new(Vec3::new(10.3, 2.0, 0.0));
+        run_steps(&mut player, Vec3::ZERO, 30, false, &obstacles);
+        assert!(!player.grounded);
+        assert!(player.position.y < 0.5);
     }
 
     #[test]
