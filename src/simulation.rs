@@ -55,14 +55,14 @@ impl Player {
         }
     }
 
-    /// Возвращает в заранее проверенную безопасную точку после падения в пустоту.
-    pub fn respawn_if_fallen(&mut self, start: Vec3, obstacles: &[Aabb]) -> bool {
-        if self.position.y >= FALL_LIMIT {
-            return false;
-        }
+    pub fn is_below_fall_limit(&self) -> bool {
+        self.position.y < FALL_LIMIT
+    }
+
+    /// Возвращает в заранее проверенную безопасную точку и сбрасывает движение.
+    pub fn respawn(&mut self, start: Vec3, obstacles: &[Aabb]) {
         *self = Self::new(start);
         self.grounded = collision::has_support(start, obstacles);
-        true
     }
 
     fn update_horizontal_velocity(
@@ -201,6 +201,23 @@ impl FixedClock {
 mod tests {
     use super::*;
 
+    fn respawn_if_fallen(player: &mut Player, start: Vec3, obstacles: &[Aabb]) -> bool {
+        if !player.is_below_fall_limit() {
+            return false;
+        }
+        let recovery = crate::recovery::Recovery::new(crate::recovery::CheckpointPose {
+            position: start,
+            yaw: 0.0,
+            pitch: 0.0,
+        });
+        recovery.restore(
+            &mut crate::section::SectionState::new(None),
+            player,
+            obstacles,
+        );
+        true
+    }
+
     fn step(player: &mut Player, movement: Vec3, jump: bool, obstacles: &[Aabb]) {
         step_with_mode(player, movement, jump, SpeedMode::Normal, obstacles);
     }
@@ -315,7 +332,7 @@ mod tests {
         let mut returned = false;
         for _ in 0..200 {
             step(&mut player, -Vec3::X, false, &obstacles);
-            if player.respawn_if_fallen(start, &obstacles) {
+            if respawn_if_fallen(&mut player, start, &obstacles) {
                 returned = true;
                 break;
             }
@@ -385,7 +402,7 @@ mod tests {
             player.horizontal_velocity = Vec3::X * MOVE_SPEED;
             player.vertical_velocity = -100.0;
             player.rotation = Quat::from_rotation_y(1.0);
-            assert!(player.respawn_if_fallen(start, &obstacles));
+            assert!(respawn_if_fallen(&mut player, start, &obstacles));
             assert_eq!(player.position, start);
             assert_eq!(player.rotation, Quat::IDENTITY);
             assert_eq!(player.horizontal_velocity, Vec3::ZERO);
@@ -399,18 +416,41 @@ mod tests {
                     FixedClock::STEP as f32,
                     &obstacles,
                 );
-                assert!(!player.respawn_if_fallen(start, &obstacles));
+                assert!(!respawn_if_fallen(&mut player, start, &obstacles));
                 assert_eq!(player.position, start);
             }
         }
     }
 
     #[test]
+    fn respawn_after_hazard_contact_resets_to_start() {
+        let obstacles = crate::world::course_colliders();
+        let mut player = Player::new(Vec3::new(-5.0, 0.0, 2.0));
+        player.horizontal_velocity = Vec3::X * MOVE_SPEED;
+        player.vertical_velocity = -8.0;
+        player.rotation = Quat::from_rotation_y(0.5);
+        player.grounded = true;
+
+        player.respawn(crate::world::START_POSITION, &obstacles);
+
+        assert_eq!(player.position, crate::world::START_POSITION);
+        assert_eq!(player.rotation, Quat::IDENTITY);
+        assert_eq!(player.horizontal_velocity, Vec3::ZERO);
+        assert_eq!(player.vertical_velocity, 0.0);
+        assert!(player.grounded);
+    }
+
+    #[test]
     fn return_waits_until_feet_are_below_fall_limit() {
         let mut player = Player::new(Vec3::Y * FALL_LIMIT);
-        assert!(!player.respawn_if_fallen(crate::world::START_POSITION, &[]));
+        assert!(!respawn_if_fallen(
+            &mut player,
+            crate::world::START_POSITION,
+            &[]
+        ));
         player.position.y -= 0.01;
-        assert!(player.respawn_if_fallen(
+        assert!(respawn_if_fallen(
+            &mut player,
             crate::world::START_POSITION,
             &crate::world::diagnostic_colliders()
         ));
@@ -437,7 +477,7 @@ mod tests {
         let obstacles = crate::world::diagnostic_colliders();
         let start = crate::world::START_POSITION;
         let mut player = Player::new(start);
-        let mut input = crate::input::JumpInput::default();
+        let mut input = crate::input::ButtonInput::default();
         for _ in 0..3 {
             player.position.z = crate::world::GROUND.bounds().min.z - 2.0;
             input.sample(true);
@@ -450,7 +490,7 @@ mod tests {
                     FixedClock::STEP as f32,
                     &obstacles,
                 );
-                if player.respawn_if_fallen(start, &obstacles) {
+                if respawn_if_fallen(&mut player, start, &obstacles) {
                     input.pause(true);
                     returned = true;
                     break;
@@ -510,7 +550,7 @@ mod tests {
                         FixedClock::STEP as f32,
                         &obstacles,
                     );
-                    if player.respawn_if_fallen(crate::world::START_POSITION, &obstacles) {
+                    if respawn_if_fallen(&mut player, crate::world::START_POSITION, &obstacles) {
                         clock.clear_time();
                         returns += 1;
                         break;
@@ -539,7 +579,7 @@ mod tests {
     fn holding_space_lands_without_repeating_and_release_allows_jump() {
         let obstacles = [crate::world::GROUND.bounds()];
         let mut player = Player::new(Vec3::ZERO);
-        let mut input = crate::input::JumpInput::default();
+        let mut input = crate::input::ButtonInput::default();
         for _ in 0..180 {
             input.sample(true);
             player.fixed_update(
@@ -659,7 +699,7 @@ mod tests {
         for fps in [30, 60, 144] {
             let mut player = Player::new(Vec3::ZERO);
             let mut clock = FixedClock::default();
-            let mut input = crate::input::JumpInput::default();
+            let mut input = crate::input::ButtonInput::default();
             let mut apex: f32 = 0.0;
             let mut landing = None;
             for _ in 0..fps * 2 {
@@ -1175,7 +1215,7 @@ mod tests {
     fn held_space_does_not_repeat_after_a_moving_landing() {
         let obstacles = [crate::world::GROUND.bounds()];
         let mut player = Player::new(Vec3::ZERO);
-        let mut input = crate::input::JumpInput::default();
+        let mut input = crate::input::ButtonInput::default();
         run_steps(&mut player, Vec3::X, 20, false, &obstacles);
         input.sample(true);
         step(&mut player, Vec3::X, input.take(), &obstacles);

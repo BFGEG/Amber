@@ -5,6 +5,11 @@ use crate::zone;
 pub const START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 pub const TIMING_START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, -6.0);
 
+pub const DEMO_FLOOR: StaticBox = StaticBox {
+    center: Vec3::new(0.0, -0.25, 0.0),
+    size: Vec3::new(24.0, 0.5, 24.0),
+};
+
 /// Неподвижная игровая область в мировых координатах; декор сюда не входит.
 #[derive(Clone, Copy)]
 pub struct Aabb {
@@ -36,22 +41,52 @@ pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
     max: Vec3::new(-6.0, 2.0, 3.5),
 };
 
-pub const CHECKPOINT_EVENT_ZONE: Aabb = Aabb {
-    min: Vec3::new(-19.3, 1.5, 0.7),
-    max: Vec3::new(-16.7, 3.5, 3.3),
+pub const CHECKPOINT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-36.0, 3.75, -7.2),
+    max: Vec3::new(-33.5, 5.6, -2.4),
 };
 
-pub const EXIT_ZONE_ID: zone::ZoneId = zone::ZoneId(2);
-const EXIT_EVENT_ZONE: Aabb = Aabb {
-    min: Vec3::new(-35.0, 3.75, -6.8),
-    max: Vec3::new(-31.0, 6.0, -2.8),
+pub const CHECKPOINT_POSITION: Vec3 = Vec3::new(-34.75, 3.75, -4.8);
+
+pub const SECTION_EVENT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-41.0, 3.75, -6.0),
+    max: Vec3::new(-38.5, 5.8, -3.6),
 };
 
-pub fn event_zones() -> [zone::Zone; 3] {
+pub const EXIT_CENTER: Vec3 = Vec3::new(-58.0, 3.75, -4.8);
+pub const EXIT_RADIUS: f32 = 2.0;
+
+pub fn exit_contains(point: Vec3) -> bool {
+    let offset = point - EXIT_CENTER;
+    (0.0..=3.0).contains(&offset.y)
+        && offset.x * offset.x + offset.z * offset.z <= EXIT_RADIUS * EXIT_RADIUS
+}
+
+pub fn event_zones() -> [zone::Zone; 1] {
+    [zone::Zone::repeating(TUTORIAL_EVENT_ZONE)]
+}
+
+pub const HAZARD_AFTER_ASCENT: [Aabb; 2] = [
+    Aabb {
+        min: Vec3::new(-46.0, 3.75, -7.8),
+        max: Vec3::new(-45.2, 3.79, -1.8),
+    },
+    Aabb {
+        min: Vec3::new(-52.0, 3.75, -7.8),
+        max: Vec3::new(-51.2, 3.79, -1.8),
+    },
+];
+
+pub const HAZARD_UNDER_PLATFORMS: Aabb = Aabb {
+    min: Vec3::new(-30.0, -4.0, -8.0),
+    max: Vec3::new(-10.0, -1.0, 5.0),
+};
+
+pub fn hazard_zones() -> [zone::Zone; 3] {
     [
-        zone::Zone::repeating(TUTORIAL_EVENT_ZONE),
-        zone::Zone::one_shot(CHECKPOINT_EVENT_ZONE),
-        zone::Zone::one_shot(EXIT_EVENT_ZONE),
+        zone::Zone::repeating(HAZARD_AFTER_ASCENT[0]),
+        zone::Zone::repeating(HAZARD_AFTER_ASCENT[1]),
+        zone::Zone::repeating(HAZARD_UNDER_PLATFORMS),
     ]
 }
 
@@ -218,25 +253,40 @@ pub fn diagnostic_colliders() -> Vec<Aabb> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collision::player_bounds;
+    use crate::collision;
 
     #[test]
-    fn only_the_exit_zone_completes_the_course() {
-        let mut zones = zone::ZoneSet::new(event_zones());
-        let exit_trigger = zone::ZoneEvent::Triggered(EXIT_ZONE_ID);
-        let exit_feet = Vec3::new(-33.0, UPPER_TERRACE.bounds().max.y, UPPER_TERRACE.center.z);
-        let exit_probe = player_bounds(exit_feet).center();
-        let course_approach = player_bounds(exit_feet + Vec3::X * 3.0).center();
+    fn hazard_zones_do_not_cover_start() {
+        let start = collision::player_bounds(START_POSITION).center();
+        for zone in hazard_zones() {
+            assert!(!zone.bounds.contains(start));
+        }
+    }
 
-        assert!(
-            !zones
-                .update(CHECKPOINT_EVENT_ZONE.center())
-                .contains(&exit_trigger)
-        );
-        assert!(!zones.update(course_approach).contains(&exit_trigger));
-        assert!(zones.update(exit_probe).contains(&exit_trigger));
-        assert!(!zones.update(exit_probe).contains(&exit_trigger));
-        zones.update(course_approach);
-        assert!(!zones.update(exit_probe).contains(&exit_trigger));
+    #[test]
+    fn hazard_strips_lie_on_upper_terrace() {
+        let terrace = UPPER_TERRACE.bounds();
+        for hazard in HAZARD_AFTER_ASCENT {
+            assert!(hazard.min.x >= terrace.min.x);
+            assert!(hazard.max.x <= terrace.max.x);
+            assert!(hazard.min.z >= terrace.min.z);
+            assert!(hazard.max.z <= terrace.max.z);
+            assert_eq!(hazard.min.y, terrace.max.y);
+            assert!(hazard.contains(Vec3::new(
+                hazard.center().x,
+                terrace.max.y,
+                hazard.center().z
+            )));
+        }
+        assert!(HAZARD_AFTER_ASCENT[1].max.x < HAZARD_AFTER_ASCENT[0].min.x);
+    }
+
+    #[test]
+    fn hazard_under_platforms_is_below_ascent() {
+        let lowest_top = ASCENT
+            .iter()
+            .map(|block| block.bounds().max.y)
+            .fold(f32::INFINITY, f32::min);
+        assert!(HAZARD_UNDER_PLATFORMS.max.y < lowest_top);
     }
 }

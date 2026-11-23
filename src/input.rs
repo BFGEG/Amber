@@ -1,11 +1,11 @@
-/// Сохраняет фронт нажатия между кадрами до первого шага симуляции.
+/// Сохраняет фронт нажатия до обработки действия; удержание не повторяет его.
 #[derive(Default)]
-pub struct JumpInput {
+pub struct ButtonInput {
     held: bool,
     pending: bool,
 }
 
-impl JumpInput {
+impl ButtonInput {
     pub fn sample(&mut self, held: bool) {
         self.pending |= held && !self.held;
         self.held = held;
@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     fn press_survives_frames_without_steps_and_is_consumed_once() {
-        let mut input = JumpInput::default();
+        let mut input = ButtonInput::default();
         input.sample(true);
         input.sample(false);
         assert!(input.take());
@@ -36,7 +36,7 @@ mod tests {
 
     #[test]
     fn holding_does_not_repeat_and_release_allows_another_jump() {
-        let mut input = JumpInput::default();
+        let mut input = ButtonInput::default();
         input.sample(true);
         assert!(input.take());
         input.sample(true);
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn pause_discards_pending_press_and_does_not_replay_a_held_key() {
-        let mut input = JumpInput::default();
+        let mut input = ButtonInput::default();
         input.sample(true);
         input.pause(true);
         input.sample(true);
