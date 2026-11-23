@@ -5,10 +5,64 @@ use crate::zone;
 pub const START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 pub const TIMING_START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, -6.0);
 
-pub const DEMO_FLOOR: StaticBox = StaticBox {
+const DEMO_FLOOR: StaticBox = StaticBox {
     center: Vec3::new(0.0, -0.25, 0.0),
     size: Vec3::new(24.0, 0.5, 24.0),
 };
+
+fn demo_structure() -> impl Iterator<Item = (StaticBox, [f32; 3])> {
+    let block = |center, size, color| {
+        (
+            StaticBox {
+                center: Vec3::from_array(center),
+                size: Vec3::from_array(size),
+            },
+            color,
+        )
+    };
+    let base = [0.29, 0.34, 0.38];
+    let stone = [0.51, 0.52, 0.48];
+    let trim = [0.67, 0.63, 0.53];
+    [
+        (DEMO_FLOOR, base),
+        block([-7.5, 3.37, 0.0], [1.5, 0.54, 5.65], stone),
+        block([-7.5, 3.74, 0.0], [1.75, 0.2, 6.0], trim),
+        block([-7.5, 3.98, 0.0], [1.37, 0.28, 5.28], base),
+    ]
+    .into_iter()
+    .chain([-1.0, 1.0].into_iter().flat_map(move |side| {
+        let pier = 2.15 * side;
+        let wall = 4.5 * side;
+        [
+            block([-7.5, 0.23, pier], [1.8, 0.46, 1.65], base),
+            block([-7.5, 1.78, pier], [1.24, 2.64, 1.15], stone),
+            block([-7.5, 2.99, pier], [1.42, 0.22, 1.38], trim),
+            block([-4.2, 0.37, wall], [6.6, 0.74, 0.68], stone),
+            block([-4.2, 0.81, wall], [6.75, 0.14, 0.82], trim),
+            block([-1.25, 0.96, wall], [0.78, 0.32, 0.78], base),
+            block([-1.25, 1.22, wall], [0.56, 0.22, 0.56], [1.0, 0.66, 0.23]),
+        ]
+    }))
+}
+
+pub fn demo_colliders() -> impl Iterator<Item = Aabb> {
+    demo_structure().map(|(block, _)| block.bounds())
+}
+
+pub fn demo_blocks() -> impl Iterator<Item = (StaticBox, [f32; 3])> {
+    let path = (0..8).flat_map(|row| {
+        [-0.9, 0.9].map(move |z| {
+            (
+                StaticBox {
+                    center: Vec3::new(-0.9 - row as f32 * 1.28, 0.0, z),
+                    size: Vec3::new(1.24, 0.018, 1.76),
+                },
+                [0.52, 0.45, 0.34],
+            )
+        })
+    });
+    demo_structure().chain(path)
+}
 
 /// Неподвижная игровая область в мировых координатах; декор сюда не входит.
 #[derive(Clone, Copy)]

@@ -23,8 +23,8 @@ use std::path::Path;
 
 use bfge::math::{Quat, Vec3};
 use bfge::{
-    DirectionalLight, Engine, EngineApi, EngineEvent, KeyCode, SceneLighting, Transform,
-    ViewpointState, WindowDescriptor,
+    DirectionalLight, Engine, EngineApi, EngineEvent, KeyCode, SceneApi, SceneError, SceneLighting,
+    SceneNodeId, SceneObjectId, Transform, ViewpointState, WindowDescriptor,
 };
 
 const CORWIN_MODEL: &str = concat!(env!("OUT_DIR"), "/corwin.obj");
@@ -146,18 +146,7 @@ fn build_scene(
         }
     }
     for (block, color) in blocks {
-        let node = engine.scene().create_node(root)?;
-        engine.scene().set_node_transform(
-            node,
-            Transform {
-                translation: block.center,
-                scale: block.size,
-                ..Transform::default()
-            },
-        )?;
-        let object = engine.scene().clone_object(cube, node)?;
-        engine.scene().set_object_color(object, color)?;
-        primary_objects.push(object);
+        primary_objects.push(add_block(engine.scene(), root, cube, block, color)?);
     }
 
     let mut primary_outlines = Vec::new();
@@ -182,30 +171,23 @@ fn build_scene(
         player_outline,
         Transform::from_translation(state.player.position),
     )?;
-    let demo_floor = world::DEMO_FLOOR;
-    let demo_node = engine.scene().create_node(root)?;
-    engine.scene().set_node_transform(
-        demo_node,
-        Transform {
-            translation: demo_floor.center,
-            scale: demo_floor.size,
-            ..Transform::default()
-        },
-    )?;
-    let demo_object = engine.scene().clone_object(cube, demo_node)?;
-    engine
-        .scene()
-        .set_object_color(demo_object, [0.08, 0.25, 0.65])?;
-    let demo_outlines = collider_debug::create_outline(
-        engine.scene(),
-        root,
-        cube,
-        demo_floor.bounds(),
-        [0.1, 1.0, 0.2],
-    )?;
+    let mut demo_objects = Vec::new();
+    for (block, color) in world::demo_blocks() {
+        demo_objects.push(add_block(engine.scene(), root, cube, block, color)?);
+    }
+    let mut demo_outlines = Vec::new();
+    for bounds in world::demo_colliders() {
+        demo_outlines.extend(collider_debug::create_outline(
+            engine.scene(),
+            root,
+            cube,
+            bounds,
+            [0.1, 1.0, 0.2],
+        )?);
+    }
     let mut visuals = scene_visuals::SceneVisuals {
         primary_objects,
-        demo_objects: vec![demo_object],
+        demo_objects,
         primary_outlines,
         demo_outlines,
         player_outlines,
@@ -471,6 +453,27 @@ fn build_scene(
     })?;
     skybox::add_to_scene(engine)?;
     Ok(())
+}
+
+fn add_block(
+    scene: &mut dyn SceneApi,
+    root: SceneNodeId,
+    cube: SceneObjectId,
+    block: world::StaticBox,
+    color: [f32; 3],
+) -> Result<SceneObjectId, SceneError> {
+    let node = scene.create_node(root)?;
+    scene.set_node_transform(
+        node,
+        Transform {
+            translation: block.center,
+            scale: block.size,
+            ..Transform::default()
+        },
+    )?;
+    let object = scene.clone_object(cube, node)?;
+    scene.set_object_color(object, color)?;
+    Ok(object)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
