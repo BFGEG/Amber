@@ -15,6 +15,7 @@ use crate::{
 pub enum SceneKind {
     Course,
     Physics,
+    Demo,
 }
 
 impl SceneKind {
@@ -77,7 +78,10 @@ pub struct SceneState {
 
 impl SceneState {
     pub fn new(kind: SceneKind, timing_demo: bool) -> Self {
-        let start_position = if timing_demo {
+        let timing_demo = timing_demo && kind == SceneKind::Physics;
+        let start_position = if kind == SceneKind::Demo {
+            Vec3::ZERO
+        } else if timing_demo {
             world::TIMING_START_POSITION
         } else {
             world::START_POSITION
@@ -96,10 +100,10 @@ impl SceneState {
             start_position,
             initial_direction,
             player: Player::new(start_position),
-            colliders: if kind == SceneKind::Course {
-                world::course_colliders()
-            } else {
-                world::diagnostic_colliders()
+            colliders: match kind {
+                SceneKind::Course => world::course_colliders(),
+                SceneKind::Physics => world::diagnostic_colliders(),
+                SceneKind::Demo => vec![world::DEMO_FLOOR.bounds()],
             },
             recovery: Recovery::new(CheckpointPose {
                 position: start_position,
@@ -130,6 +134,84 @@ impl SceneState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn round_trips_drop_old_checkpoint_events_pause_and_section_changes() {
+        let mut loaded = SceneState::new(SceneKind::Course, false);
+        for _ in 0..20 {
+            loaded.recovery.activate(CheckpointPose {
+                position: world::CHECKPOINT_POSITION,
+                yaw: 1.0,
+                pitch: -0.3,
+            });
+            loaded.section.update(world::SECTION_EVENT_ZONE.center());
+            assert!(loaded.section.changed);
+            loaded
+                .checkpoint_set
+                .update(crate::collision::player_bounds(world::CHECKPOINT_POSITION).center());
+            loaded
+                .pause
+                .frame_steps(&mut loaded.clock, 0.02, true, false);
+            loaded
+                .pause
+                .frame_steps(&mut loaded.clock, 0.02, true, true);
+            assert!(loaded.pause.is_paused());
+            loaded.hazard_hold = 0.15;
+            loaded.hazard_alert = Some(ZoneId(0));
+            loaded.return_input.sample(true);
+
+            loaded = SceneState::new(SceneKind::Demo, true);
+            assert_eq!(loaded.player.position, Vec3::ZERO);
+            assert_eq!(loaded.recovery.pose().position, Vec3::ZERO);
+            assert!(!loaded.timing_demo);
+            assert!(!loaded.pause.is_paused());
+            assert_eq!(loaded.hazard_hold, 0.0);
+            assert!(!loaded.return_input.take());
+            assert!(
+                loaded
+                    .checkpoint_set
+                    .update(world::CHECKPOINT_ZONE.center())
+                    .is_empty()
+            );
+            assert!(
+                loaded
+                    .hazard_set
+                    .update(world::HAZARD_AFTER_ASCENT[0].center())
+                    .is_empty()
+            );
+            assert!(crate::collision::has_support(
+                loaded.player.position,
+                &loaded.colliders
+            ));
+
+            loaded = SceneState::new(SceneKind::Course, false);
+            assert_eq!(loaded.recovery.pose().position, world::START_POSITION);
+            assert!(!loaded.section.changed);
+            assert!(!loaded.pause.is_paused());
+            assert!(
+                loaded
+                    .checkpoint_set
+                    .update(crate::collision::player_bounds(world::CHECKPOINT_POSITION).center())
+                    .contains(&crate::zone::ZoneEvent::Triggered(ZoneId(0)))
+            );
+        }
+    }
+
+    #[test]
+    fn reload_of_each_scene_starts_grounded_after_one_simulation_step() {
+        for kind in [SceneKind::Course, SceneKind::Physics, SceneKind::Demo] {
+            let mut loaded = SceneState::new(kind, false);
+            loaded.player.fixed_update(
+                Vec3::ZERO,
+                false,
+                crate::simulation::SpeedMode::Normal,
+                FixedClock::STEP as f32,
+                &loaded.colliders,
+            );
+            assert!(loaded.player.grounded);
+            assert_eq!(loaded.player.position, loaded.start_position);
+        }
+    }
 
     #[test]
     fn new_load_has_no_progress_pending_input_or_hazard_delay() {

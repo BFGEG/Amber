@@ -11,6 +11,7 @@ pub struct SectionVisuals {
     object: SceneObjectId,
     initial_position: Vec3,
     changed: bool,
+    outlines: Vec<SceneObjectId>,
 }
 
 pub fn add_to_scene(
@@ -19,8 +20,9 @@ pub fn add_to_scene(
     cube: SceneObjectId,
     bounds: Aabb,
 ) -> Result<SectionVisuals, SceneError> {
-    for object in collider_debug::create_outline(scene, root, cube, bounds, CHANGED_COLOR)? {
-        scene.set_object_visible(object, true)?;
+    let outlines = collider_debug::create_outline(scene, root, cube, bounds, CHANGED_COLOR)?;
+    for object in &outlines {
+        scene.set_object_visible(*object, true)?;
     }
     let center = bounds.center();
     let initial_position = Vec3::new(center.x, bounds.min.y + 1.0, center.z);
@@ -40,10 +42,19 @@ pub fn add_to_scene(
         object,
         initial_position,
         changed: false,
+        outlines,
     })
 }
 
 impl SectionVisuals {
+    pub fn set_visible(&self, scene: &mut dyn SceneApi, visible: bool) -> Result<(), SceneError> {
+        scene.set_object_visible(self.object, visible)?;
+        for object in &self.outlines {
+            scene.set_object_visible(*object, visible)?;
+        }
+        Ok(())
+    }
+
     pub fn synchronize(
         &mut self,
         scene: &mut dyn SceneApi,

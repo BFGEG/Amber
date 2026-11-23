@@ -5,6 +5,11 @@ use crate::zone;
 pub const START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 pub const TIMING_START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, -6.0);
 
+pub const DEMO_FLOOR: StaticBox = StaticBox {
+    center: Vec3::new(0.0, -0.25, 0.0),
+    size: Vec3::new(24.0, 0.5, 24.0),
+};
+
 /// Неподвижная игровая область в мировых координатах; декор сюда не входит.
 #[derive(Clone, Copy)]
 pub struct Aabb {
