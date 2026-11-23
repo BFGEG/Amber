@@ -41,10 +41,17 @@ pub const CHECKPOINT_EVENT_ZONE: Aabb = Aabb {
     max: Vec3::new(-16.7, 3.5, 3.3),
 };
 
-pub fn event_zones() -> [zone::Zone; 2] {
+pub const EXIT_ZONE_ID: zone::ZoneId = zone::ZoneId(2);
+const EXIT_EVENT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-35.0, 3.75, -6.8),
+    max: Vec3::new(-31.0, 6.0, -2.8),
+};
+
+pub fn event_zones() -> [zone::Zone; 3] {
     [
         zone::Zone::repeating(TUTORIAL_EVENT_ZONE),
         zone::Zone::one_shot(CHECKPOINT_EVENT_ZONE),
+        zone::Zone::one_shot(EXIT_EVENT_ZONE),
     ]
 }
 
@@ -206,4 +213,30 @@ pub fn diagnostic_colliders() -> Vec<Aabb> {
         .chain(diagnostic_blocks())
         .map(StaticBox::bounds)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collision::player_bounds;
+
+    #[test]
+    fn only_the_exit_zone_completes_the_course() {
+        let mut zones = zone::ZoneSet::new(event_zones());
+        let exit_trigger = zone::ZoneEvent::Triggered(EXIT_ZONE_ID);
+        let exit_feet = Vec3::new(-33.0, UPPER_TERRACE.bounds().max.y, UPPER_TERRACE.center.z);
+        let exit_probe = player_bounds(exit_feet).center();
+        let course_approach = player_bounds(exit_feet + Vec3::X * 3.0).center();
+
+        assert!(
+            !zones
+                .update(CHECKPOINT_EVENT_ZONE.center())
+                .contains(&exit_trigger)
+        );
+        assert!(!zones.update(course_approach).contains(&exit_trigger));
+        assert!(zones.update(exit_probe).contains(&exit_trigger));
+        assert!(!zones.update(exit_probe).contains(&exit_trigger));
+        zones.update(course_approach);
+        assert!(!zones.update(exit_probe).contains(&exit_trigger));
+    }
 }

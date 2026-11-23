@@ -197,8 +197,12 @@ fn build_scene(
     let mut demo_steps = 0;
     let mut demo_frames = 0;
     let mut demo_elapsed = 0.0;
+    let mut course_completed = false;
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
+            if course_completed {
+                return Ok(());
+            }
             let input = context.input();
             let Some(steps) = clock.frame_steps(time.time_since_last_frame, input.is_focused()) else {
                 jump_input.pause(input.is_key_pressed(KeyCode::Space));
@@ -265,7 +269,12 @@ fn build_scene(
                 );
                 let respawned = player.respawn_if_fallen(start_position, &colliders);
                 let zone_probe = collision::player_bounds(player.position).center();
-                zone_events.extend(zone_set.update(zone_probe));
+                let events = zone_set.update(zone_probe);
+                course_completed = events.contains(&zone::ZoneEvent::Triggered(world::EXIT_ZONE_ID));
+                zone_events.extend(events);
+                if course_completed {
+                    break;
+                }
                 if respawned {
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
