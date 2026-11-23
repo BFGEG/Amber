@@ -25,7 +25,7 @@ pub struct ZoneVisuals {
 }
 
 pub struct HazardVisuals {
-    objects: Vec<SceneObjectId>,
+    hazards: Vec<Vec<SceneObjectId>>,
 }
 
 pub fn add_to_scene(
@@ -71,8 +71,9 @@ pub fn add_hazard_visuals(
     cube: SceneObjectId,
     hazards: &[Zone],
 ) -> Result<HazardVisuals, SceneError> {
-    let mut objects = Vec::new();
+    let mut visual_hazards = Vec::with_capacity(hazards.len());
     for hazard in hazards {
+        let mut objects = Vec::new();
         for object in
             collider_debug::create_outline(scene, root, cube, hazard.bounds, HAZARD_COLOR)?
         {
@@ -98,18 +99,29 @@ pub fn add_hazard_visuals(
         let object = scene.clone_object(cube, node)?;
         scene.set_object_color(object, HAZARD_COLOR)?;
         objects.push(object);
+        visual_hazards.push(objects);
     }
-    Ok(HazardVisuals { objects })
+    Ok(HazardVisuals {
+        hazards: visual_hazards,
+    })
 }
 
 impl HazardVisuals {
-    pub fn set_alert(&self, scene: &mut dyn SceneApi, alert: bool) -> Result<(), SceneError> {
+    pub fn set_alert(
+        &self,
+        scene: &mut dyn SceneApi,
+        id: ZoneId,
+        alert: bool,
+    ) -> Result<(), SceneError> {
+        let Some(objects) = self.hazards.get(id.0) else {
+            return Ok(());
+        };
         let color = if alert {
             HAZARD_ALERT_COLOR
         } else {
             HAZARD_COLOR
         };
-        for object in &self.objects {
+        for object in objects {
             scene.set_object_color(*object, color)?;
         }
         Ok(())

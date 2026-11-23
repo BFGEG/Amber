@@ -204,6 +204,7 @@ fn build_scene(
     let mut clock = simulation::FixedClock::default();
     let mut jump_input = input::JumpInput::default();
     let mut hazard_hold = 0.0_f32;
+    let mut hazard_alert = None;
     let mut demo_steps = 0;
     let mut demo_frames = 0;
     let mut demo_elapsed = 0.0;
@@ -269,7 +270,9 @@ fn build_scene(
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
                     jump_input.pause(space_held);
-                    hazard_visuals.set_alert(context.scene(), false)?;
+                    if let Some(id) = hazard_alert.take() {
+                        hazard_visuals.set_alert(context.scene(), id, false)?;
+                    }
                 }
             } else {
                 for _ in 0..steps {
@@ -284,12 +287,15 @@ fn build_scene(
                         &colliders,
                     );
                     let player_bounds = collision::player_bounds(player.position);
-                    let hazard_contact = hazard_set.update(player.position).iter().any(|event| {
-                        matches!(
-                            event,
-                            zone::ZoneEvent::Entered(_) | zone::ZoneEvent::Stayed(_)
-                        )
-                    });
+                    let hazard_contact =
+                        hazard_set.update(player.position).into_iter().find_map(|event| {
+                            match event {
+                                zone::ZoneEvent::Entered(id) | zone::ZoneEvent::Stayed(id) => {
+                                    Some(id)
+                                }
+                                _ => None,
+                            }
+                        });
                     let fell = player.respawn_if_fallen(start_position, &colliders);
                     if fell {
                         follow_camera = camera::FollowCamera::new(player.position);
@@ -298,9 +304,10 @@ fn build_scene(
                         // Остальные шаги кадра не должны сразу сдвинуть персонажа со старта.
                         break;
                     }
-                    if hazard_contact {
+                    if let Some(id) = hazard_contact {
                         hazard_hold = HAZARD_HOLD_SECONDS;
-                        hazard_visuals.set_alert(context.scene(), true)?;
+                        hazard_alert = Some(id);
+                        hazard_visuals.set_alert(context.scene(), id, true)?;
                         clock.clear_time();
                         jump_input.pause(space_held);
                         break;
