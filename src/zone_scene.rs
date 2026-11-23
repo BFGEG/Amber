@@ -13,7 +13,6 @@ const MARKER_HEIGHT: f32 = 1.1;
 
 struct ZoneMarker {
     id: ZoneId,
-    mode: ZoneMode,
     object: SceneObjectId,
     active: bool,
 }
@@ -52,7 +51,6 @@ pub fn add_to_scene(
         scene.set_object_color(object, IDLE_COLOR)?;
         markers.push(ZoneMarker {
             id: ZoneId(index),
-            mode: zone.mode,
             object,
             active: false,
         });
@@ -69,15 +67,12 @@ impl ZoneVisuals {
         for event in events {
             let (id, active) = match *event {
                 ZoneEvent::Entered(id) => (id, true),
-                ZoneEvent::Stayed(_) => continue,
+                ZoneEvent::Stayed(_) | ZoneEvent::Triggered(_) => continue,
                 ZoneEvent::Exited(id) => (id, false),
             };
             let Some(marker) = self.markers.iter_mut().find(|marker| marker.id == id) else {
                 continue;
             };
-            if marker.mode == ZoneMode::OneShot && !active {
-                continue;
-            }
             if marker.active == active {
                 continue;
             }

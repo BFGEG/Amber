@@ -264,9 +264,8 @@ fn build_scene(
                     &colliders,
                 );
                 let respawned = player.respawn_if_fallen(start_position, &colliders);
-                zone_events.extend(
-                    zone_set.update(collision::player_bounds(player.position)),
-                );
+                let zone_probe = collision::player_bounds(player.position).center();
+                zone_events.extend(zone_set.update(zone_probe));
                 if respawned {
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();

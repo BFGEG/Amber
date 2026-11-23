@@ -21,13 +21,13 @@ impl Aabb {
         self.max - self.min
     }
 
-    pub fn overlaps(self, other: Aabb) -> bool {
-        self.min.x < other.max.x
-            && self.max.x > other.min.x
-            && self.min.y < other.max.y
-            && self.max.y > other.min.y
-            && self.min.z < other.max.z
-            && self.max.z > other.min.z
+    pub fn contains(self, point: Vec3) -> bool {
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
+            && point.z >= self.min.z
+            && point.z <= self.max.z
     }
 }
 
@@ -37,8 +37,8 @@ pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
 };
 
 pub const CHECKPOINT_EVENT_ZONE: Aabb = Aabb {
-    min: Vec3::new(-19.0, 1.5, 1.0),
-    max: Vec3::new(-17.0, 3.5, 3.0),
+    min: Vec3::new(-19.3, 1.5, 0.7),
+    max: Vec3::new(-16.7, 3.5, 3.3),
 };
 
 pub fn event_zones() -> [zone::Zone; 2] {
