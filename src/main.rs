@@ -82,6 +82,14 @@ fn build_scene(
     let mut zone_visuals = zone_scene::add_to_scene(engine.scene(), root, cube, &zones)?;
     let mut zone_set = zone::ZoneSet::new(zones);
 
+    let hazards = if physics_demo {
+        Vec::new()
+    } else {
+        world::hazard_zones().to_vec()
+    };
+    zone_scene::add_hazard_visuals(engine.scene(), root, cube, &hazards)?;
+    let mut hazard_set = zone::ZoneSet::new(hazards.iter().copied());
+
     let mut blocks = Vec::new();
     if physics_demo {
         blocks.extend(world::diagnostic_blocks().map(|block| (block, [0.25, 0.25, 0.25])));
@@ -263,16 +271,25 @@ fn build_scene(
                     simulation::FixedClock::STEP as f32,
                     &colliders,
                 );
-                let respawned = player.respawn_if_fallen(start_position, &colliders);
-                let zone_probe = collision::player_bounds(player.position).center();
-                zone_events.extend(zone_set.update(zone_probe));
-                if respawned {
+                let player_bounds = collision::player_bounds(player.position);
+                let hazard_contact = hazard_set.update_bounds(player_bounds).iter().any(|event| {
+                    matches!(
+                        event,
+                        zone::ZoneEvent::Entered(_) | zone::ZoneEvent::Stayed(_)
+                    )
+                });
+                let fell = player.respawn_if_fallen(start_position, &colliders);
+                if hazard_contact && !fell {
+                    player.respawn(start_position, &colliders);
+                }
+                if fell || hazard_contact {
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
                     jump_input.pause(space_held);
                     // Остальные шаги кадра не должны сразу сдвинуть персонажа со старта.
                     break;
                 }
+                zone_events.extend(zone_set.update(player_bounds.center()));
                 if timing_demo {
                     demo_steps += 1;
                     if demo_steps == DEMO_STEPS {

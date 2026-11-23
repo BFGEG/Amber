@@ -55,13 +55,22 @@ impl Player {
         }
     }
 
-    /// Возвращает в заранее проверенную безопасную точку после падения в пустоту.
-    pub fn respawn_if_fallen(&mut self, start: Vec3, obstacles: &[Aabb]) -> bool {
-        if self.position.y >= FALL_LIMIT {
-            return false;
-        }
+    pub fn is_below_fall_limit(&self) -> bool {
+        self.position.y < FALL_LIMIT
+    }
+
+    /// Возвращает в заранее проверенную безопасную точку и сбрасывает движение.
+    pub fn respawn(&mut self, start: Vec3, obstacles: &[Aabb]) {
         *self = Self::new(start);
         self.grounded = collision::has_support(start, obstacles);
+    }
+
+    /// Возвращает в безопасную точку после падения в пустоту.
+    pub fn respawn_if_fallen(&mut self, start: Vec3, obstacles: &[Aabb]) -> bool {
+        if !self.is_below_fall_limit() {
+            return false;
+        }
+        self.respawn(start, obstacles);
         true
     }
 
@@ -403,6 +412,24 @@ mod tests {
                 assert_eq!(player.position, start);
             }
         }
+    }
+
+    #[test]
+    fn respawn_after_hazard_contact_resets_to_start() {
+        let obstacles = crate::world::course_colliders();
+        let mut player = Player::new(Vec3::new(-5.0, 0.0, 2.0));
+        player.horizontal_velocity = Vec3::X * MOVE_SPEED;
+        player.vertical_velocity = -8.0;
+        player.rotation = Quat::from_rotation_y(0.5);
+        player.grounded = true;
+
+        player.respawn(crate::world::START_POSITION, &obstacles);
+
+        assert_eq!(player.position, crate::world::START_POSITION);
+        assert_eq!(player.rotation, Quat::IDENTITY);
+        assert_eq!(player.horizontal_velocity, Vec3::ZERO);
+        assert_eq!(player.vertical_velocity, 0.0);
+        assert!(player.grounded);
     }
 
     #[test]

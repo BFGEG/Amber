@@ -61,10 +61,18 @@ impl ZoneSet {
     }
 
     pub fn update(&mut self, player: Vec3) -> Vec<ZoneEvent> {
+        self.update_inside(|bounds| bounds.contains(player))
+    }
+
+    pub fn update_bounds(&mut self, player: Aabb) -> Vec<ZoneEvent> {
+        self.update_inside(|bounds| bounds.intersects(player))
+    }
+
+    fn update_inside(&mut self, is_inside: impl Fn(Aabb) -> bool) -> Vec<ZoneEvent> {
         let mut events = Vec::new();
         for (index, zone) in self.zones.iter().enumerate() {
             let id = ZoneId(index);
-            let inside = zone.bounds.contains(player);
+            let inside = is_inside(zone.bounds);
             let state = &mut self.states[index];
             let was_inside = state.inside;
             state.inside = inside;
@@ -198,6 +206,20 @@ mod tests {
         assert_eq!(
             zones.update(at(0.5, 1.0, 1.0)),
             vec![ZoneEvent::Stayed(ZoneId(0)), ZoneEvent::Exited(ZoneId(1))]
+        );
+    }
+
+    #[test]
+    fn bounds_update_detects_body_contact() {
+        let mut zones = ZoneSet::new([Zone::repeating(bounds([-5.4, 0.0, 0.0], [-4.6, 0.2, 4.0]))]);
+        let player = Aabb {
+            min: Vec3::new(-5.0, 0.0, 2.0),
+            max: Vec3::new(-4.5, 1.8, 2.5),
+        };
+
+        assert_eq!(
+            zones.update_bounds(player),
+            vec![ZoneEvent::Entered(ZoneId(0))]
         );
     }
 

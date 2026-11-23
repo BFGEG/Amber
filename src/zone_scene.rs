@@ -8,8 +8,10 @@ const REPEATING_FRAME_COLOR: [f32; 3] = [0.1, 0.8, 1.0];
 const ONE_SHOT_FRAME_COLOR: [f32; 3] = [0.9, 0.3, 1.0];
 const IDLE_COLOR: [f32; 3] = [1.2, 0.55, 0.08];
 const ACTIVE_COLOR: [f32; 3] = [0.2, 1.4, 0.25];
+const HAZARD_COLOR: [f32; 3] = [1.8, 0.08, 0.03];
 const MARKER_SIZE: f32 = 0.36;
 const MARKER_HEIGHT: f32 = 1.1;
+const HAZARD_SLAB_THICKNESS: f32 = 0.04;
 
 struct ZoneMarker {
     id: ZoneId,
@@ -56,6 +58,40 @@ pub fn add_to_scene(
         });
     }
     Ok(ZoneVisuals { markers })
+}
+
+pub fn add_hazard_visuals(
+    scene: &mut dyn SceneApi,
+    root: SceneNodeId,
+    cube: SceneObjectId,
+    hazards: &[Zone],
+) -> Result<(), SceneError> {
+    for hazard in hazards {
+        for object in
+            collider_debug::create_outline(scene, root, cube, hazard.bounds, HAZARD_COLOR)?
+        {
+            scene.set_object_visible(object, true)?;
+        }
+
+        let center = hazard.bounds.center();
+        let size = hazard.bounds.size();
+        let node = scene.create_node(root)?;
+        scene.set_node_transform(
+            node,
+            Transform {
+                translation: Vec3::new(
+                    center.x,
+                    hazard.bounds.max.y - HAZARD_SLAB_THICKNESS * 0.5,
+                    center.z,
+                ),
+                scale: Vec3::new(size.x, HAZARD_SLAB_THICKNESS, size.z),
+                ..Transform::default()
+            },
+        )?;
+        let object = scene.clone_object(cube, node)?;
+        scene.set_object_color(object, HAZARD_COLOR)?;
+    }
+    Ok(())
 }
 
 impl ZoneVisuals {

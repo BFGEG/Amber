@@ -29,6 +29,15 @@ impl Aabb {
             && point.z >= self.min.z
             && point.z <= self.max.z
     }
+
+    pub fn intersects(self, other: Aabb) -> bool {
+        self.min.x <= other.max.x
+            && self.max.x >= other.min.x
+            && self.min.y <= other.max.y
+            && self.max.y >= other.min.y
+            && self.min.z <= other.max.z
+            && self.max.z >= other.min.z
+    }
 }
 
 pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
@@ -45,6 +54,23 @@ pub fn event_zones() -> [zone::Zone; 2] {
     [
         zone::Zone::repeating(TUTORIAL_EVENT_ZONE),
         zone::Zone::one_shot(CHECKPOINT_EVENT_ZONE),
+    ]
+}
+
+pub const HAZARD_STRIP: Aabb = Aabb {
+    min: Vec3::new(-5.4, 0.0, 0.0),
+    max: Vec3::new(-4.6, 0.2, 4.0),
+};
+
+pub const HAZARD_UNDER_PLATFORMS: Aabb = Aabb {
+    min: Vec3::new(-30.0, -4.0, -8.0),
+    max: Vec3::new(-10.0, -1.0, 5.0),
+};
+
+pub fn hazard_zones() -> [zone::Zone; 2] {
+    [
+        zone::Zone::repeating(HAZARD_STRIP),
+        zone::Zone::repeating(HAZARD_UNDER_PLATFORMS),
     ]
 }
 
@@ -206,4 +232,37 @@ pub fn diagnostic_colliders() -> Vec<Aabb> {
         .chain(diagnostic_blocks())
         .map(StaticBox::bounds)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collision;
+
+    #[test]
+    fn hazard_zones_do_not_cover_start() {
+        let start = collision::player_bounds(START_POSITION).center();
+        for zone in hazard_zones() {
+            assert!(!zone.bounds.contains(start));
+        }
+    }
+
+    #[test]
+    fn hazard_strip_lies_on_lower_terrace() {
+        let terrace = LOWER_TERRACE.bounds();
+        assert!(HAZARD_STRIP.min.x >= terrace.min.x);
+        assert!(HAZARD_STRIP.max.x <= terrace.max.x);
+        assert!(HAZARD_STRIP.min.z >= terrace.min.z);
+        assert!(HAZARD_STRIP.max.z <= terrace.max.z);
+        assert_eq!(HAZARD_STRIP.min.y, terrace.max.y);
+    }
+
+    #[test]
+    fn hazard_under_platforms_is_below_ascent() {
+        let lowest_top = ASCENT
+            .iter()
+            .map(|block| block.bounds().max.y)
+            .fold(f32::INFINITY, f32::min);
+        assert!(HAZARD_UNDER_PLATFORMS.max.y < lowest_top);
+    }
 }
