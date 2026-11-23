@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Смена Отражения | F с задержкой 0,2–0,4 с либо мгновенно по Q | [#28](https://github.com/BFGEG/Amber/issues/28) |
 | Дополнительная скорость | Выбран медленный точный ход на Shift (вариант A) | [#18](https://github.com/BFGEG/Amber/issues/18) |
-| Выход со сцены | Автоматически при входе либо после E | [#26](https://github.com/BFGEG/Amber/issues/26) |
+| Выход со сцены | Выбран переход по E внутри выходной зоны (вариант B) | [#26](https://github.com/BFGEG/Amber/issues/26) |
 | Усилие в Лабиринте | Нажатия Space по импульсам и усталость либо удержание E и энергия | [#72](https://github.com/BFGEG/Amber/issues/72) |
 | Сход с линии | Допуск 0,5 с либо немедленный возврат | [#69](https://github.com/BFGEG/Amber/issues/69) |
 | Первая глава | Шесть зон с акведуком либо семь с башней; различаются чекпоинты | [#38](https://github.com/BFGEG/Amber/issues/38), [#40](https://github.com/BFGEG/Amber/issues/40) |

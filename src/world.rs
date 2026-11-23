@@ -53,6 +53,15 @@ pub const SECTION_EVENT_ZONE: Aabb = Aabb {
     max: Vec3::new(-38.5, 5.8, -3.6),
 };
 
+pub const EXIT_CENTER: Vec3 = Vec3::new(-58.0, 3.75, -4.8);
+pub const EXIT_RADIUS: f32 = 2.0;
+
+pub fn exit_contains(point: Vec3) -> bool {
+    let offset = point - EXIT_CENTER;
+    (0.0..=3.0).contains(&offset.y)
+        && offset.x * offset.x + offset.z * offset.z <= EXIT_RADIUS * EXIT_RADIUS
+}
+
 pub fn event_zones() -> [zone::Zone; 1] {
     [zone::Zone::repeating(TUTORIAL_EVENT_ZONE)]
 }

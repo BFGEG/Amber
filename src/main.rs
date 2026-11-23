@@ -2,6 +2,7 @@ mod camera;
 mod collider_debug;
 mod collision;
 mod devtools;
+mod exit_scene;
 mod input;
 mod pause;
 mod pause_scene;
@@ -82,6 +83,11 @@ fn build_scene(
     let corwin_weapons = engine.load_model(Path::new(CORWIN_WEAPONS), corwin)?;
 
     let cube = engine.load_model(Path::new(CUBE_MODEL), root)?;
+    if !physics_demo {
+        primary_objects.extend(exit_scene::add_beacon(engine.scene(), root, cube)?);
+    }
+    let exit_card = engine.load_model(Path::new(exit_scene::PROMPT_MODEL), root)?;
+    let mut exit_prompt = exit_scene::ExitPrompt::new(engine.scene(), exit_card)?;
 
     let zones = state.kind.event_zones();
     let zone_visuals = zone_scene::add_to_scene(engine.scene(), root, cube, &zones)?;
@@ -245,14 +251,21 @@ fn build_scene(
     let mut scene_controls = scene_controls::SceneControls::new(kind);
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
-            let request = scene_controls.request(
-                state.kind, context.input().is_focused(),
-                context.input().is_key_pressed(KeyCode::F5), context.input().is_key_pressed(KeyCode::F6),
+            let focused = context.input().is_focused();
+            let escape_held = context.input().is_key_pressed(KeyCode::Escape);
+            let exit_held = context.input().is_key_pressed(KeyCode::KeyE);
+            let developer_request = scene_controls.request(
+                state.kind, focused, context.input().is_key_pressed(KeyCode::F5),
+                context.input().is_key_pressed(KeyCode::F6),
             );
+            let exit_request = state.exit_request(focused && !escape_held && !state.pause.is_paused(), exit_held);
+            let request = developer_request.or(exit_request);
             if let Some(kind) = request {
                 state = scene_state::SceneState::new(kind, timing_demo);
+                state.exit_request(false, exit_held);
                 visuals.activate(context.scene(), &state, debug_visible)?;
                 pause_overlay.synchronize(context.scene(), false)?;
+                exit_prompt.synchronize(context.scene(), false)?;
                 context.scene().set_node_transform(corwin, Transform {
                     translation: state.player.position, rotation: state.player.rotation, ..Transform::default()
                 })?;
@@ -264,8 +277,6 @@ fn build_scene(
                 context.scene().set_viewpoint(viewpoint)?;
                 return Ok(());
             }
-            let focused = context.input().is_focused();
-            let escape_held = context.input().is_key_pressed(KeyCode::Escape);
             let was_paused = state.pause.is_paused();
             let steps = state.pause.frame_steps(&mut state.clock, time.time_since_last_frame, focused, escape_held);
             if pause_overlay.interact(context, state.pause.is_paused())? {
@@ -281,6 +292,7 @@ fn build_scene(
                 state.jump_input.pause(input.is_key_pressed(KeyCode::Space));
                 state.return_input.pause(input.is_key_pressed(KeyCode::KeyR));
                 state.debug_pressed = input.is_key_pressed(KeyCode::F3);
+                exit_prompt.synchronize(context.scene(), focused && !state.pause.is_paused() && state.exit_available())?;
                 return Ok(());
             };
             let space_held = input.is_key_pressed(KeyCode::Space);
@@ -449,6 +461,7 @@ fn build_scene(
                 corwin_visible = visible;
             }
             context.scene().set_viewpoint(viewpoint)?;
+            exit_prompt.synchronize(context.scene(), state.exit_available())?;
             Ok(())
         }),
         frame_ended: Box::new(move |_, _| {

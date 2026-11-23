@@ -68,6 +68,7 @@ pub struct SceneState {
     pub pause: PauseState,
     pub jump_input: ButtonInput,
     pub return_input: ButtonInput,
+    exit_input: ButtonInput,
     pub debug_pressed: bool,
     pub hazard_hold: f32,
     pub hazard_alert: Option<ZoneId>,
@@ -121,6 +122,7 @@ impl SceneState {
             pause: PauseState::default(),
             jump_input: ButtonInput::default(),
             return_input: ButtonInput::default(),
+            exit_input: ButtonInput::default(),
             debug_pressed: false,
             hazard_hold: 0.0,
             hazard_alert: None,
@@ -129,11 +131,50 @@ impl SceneState {
             demo_elapsed: 0.0,
         }
     }
+
+    pub fn exit_available(&self) -> bool {
+        self.kind == SceneKind::Course
+            && world::exit_contains(crate::collision::player_bounds(self.player.position).center())
+    }
+
+    pub fn exit_request(&mut self, can_interact: bool, held: bool) -> Option<SceneKind> {
+        if !can_interact {
+            self.exit_input.pause(held);
+            return None;
+        }
+        self.exit_input.sample(held);
+        (self.exit_input.take() && self.exit_available()).then_some(SceneKind::Demo)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn course_exit_requires_a_new_press_inside_the_circle() {
+        let mut state = SceneState::new(SceneKind::Course, false);
+        assert_eq!(state.exit_request(true, true), None);
+        state.player.position = world::EXIT_CENTER + Vec3::new(1.8, 0.0, 1.8);
+        assert!(!state.exit_available());
+        state.player.position = world::EXIT_CENTER;
+        assert!(state.exit_available());
+        assert_eq!(state.exit_request(true, true), None);
+        state.exit_request(true, false);
+        state.player.position = world::EXIT_CENTER + Vec3::X * 3.0;
+        assert!(!state.exit_available());
+        assert_eq!(state.exit_request(true, true), None);
+        state.player.position = world::EXIT_CENTER;
+        assert_eq!(state.exit_request(false, true), None);
+        assert_eq!(state.exit_request(true, true), None);
+        state.exit_request(true, false);
+        assert_eq!(state.exit_request(true, true), Some(SceneKind::Demo));
+        assert_eq!(state.exit_request(true, true), None);
+
+        let mut demo = SceneState::new(SceneKind::Demo, false);
+        demo.player.position = world::EXIT_CENTER;
+        assert_eq!(demo.exit_request(true, true), None);
+    }
 
     #[test]
     fn round_trips_drop_old_checkpoint_events_pause_and_section_changes() {
