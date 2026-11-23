@@ -197,7 +197,8 @@ fn build_scene(
     for object in &outlines {
         engine.scene().set_object_visible(*object, debug_visible)?;
     }
-    let mut pause_overlay = pause_scene::PauseOverlay::new(engine.scene(), cube)?;
+    let pause_card = engine.load_model(Path::new(pause_scene::CARD_MODEL), root)?;
+    let mut pause_overlay = pause_scene::PauseOverlay::new(engine.scene(), pause_card)?;
     engine.scene().remove_object(cube)?;
     let mut debug_pressed = false;
 
