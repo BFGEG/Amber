@@ -4,6 +4,8 @@ mod collision;
 mod devtools;
 mod input;
 mod recovery;
+mod section;
+mod section_scene;
 mod simulation;
 mod skybox;
 mod world;
@@ -101,6 +103,19 @@ fn build_scene(
             light,
             world::CHECKPOINT_ZONE,
         )?)
+    };
+
+    let demo_zone = (!physics_demo).then_some(world::SECTION_EVENT_ZONE);
+    let mut section = section::SectionState::new(demo_zone);
+    let mut section_visuals = if let Some(bounds) = demo_zone {
+        Some(section_scene::add_to_scene(
+            engine.scene(),
+            root,
+            cube,
+            bounds,
+        )?)
+    } else {
+        None
     };
 
     let hazards = if physics_demo {
@@ -227,7 +242,8 @@ fn build_scene(
         pitch,
     });
     let mut clock = simulation::FixedClock::default();
-    let mut jump_input = input::JumpInput::default();
+    let mut jump_input = input::ButtonInput::default();
+    let mut return_input = input::ButtonInput::default();
     let mut hazard_hold = 0.0_f32;
     let mut hazard_alert = None;
     let mut demo_steps = 0;
@@ -238,11 +254,14 @@ fn build_scene(
             let input = context.input();
             let Some(steps) = clock.frame_steps(time.time_since_last_frame, input.is_focused()) else {
                 jump_input.pause(input.is_key_pressed(KeyCode::Space));
+                return_input.pause(input.is_key_pressed(KeyCode::KeyR));
                 debug_pressed = false;
                 return Ok(());
             };
             let space_held = input.is_key_pressed(KeyCode::Space);
             jump_input.sample(!timing_demo && space_held);
+            let return_held = input.is_key_pressed(KeyCode::KeyR);
+            return_input.sample(!timing_demo && return_held);
             let pressed = input.is_key_pressed(KeyCode::F3);
             let toggle_debug = pressed && !debug_pressed;
             debug_pressed = pressed;
@@ -288,20 +307,11 @@ fn build_scene(
             }
             let mut zone_events = Vec::new();
             let mut checkpoint_activated = false;
-            if hazard_hold > 0.0 {
+            let mut restore_requested = return_input.take();
+            if !restore_requested && hazard_hold > 0.0 {
                 hazard_hold = (hazard_hold - time.time_since_last_frame).max(0.0);
-                if hazard_hold == 0.0 {
-                    player.respawn(recovery.pose().position, &colliders);
-                    yaw = recovery.pose().yaw;
-                    pitch = recovery.pose().pitch;
-                    follow_camera = camera::FollowCamera::new(player.position);
-                    clock.clear_time();
-                    jump_input.pause(space_held);
-                    if let Some(id) = hazard_alert.take() {
-                        hazard_visuals.set_alert(context.scene(), id, false)?;
-                    }
-                }
-            } else {
+                restore_requested = hazard_hold == 0.0;
+            } else if !restore_requested {
                 for _ in 0..steps {
                     if timing_demo && demo_steps == DEMO_STEPS {
                         break;
@@ -323,14 +333,8 @@ fn build_scene(
                                 _ => None,
                             }
                         });
-                    let fell = player.respawn_if_fallen(recovery.pose().position, &colliders);
-                    if fell {
-                        yaw = recovery.pose().yaw;
-                        pitch = recovery.pose().pitch;
-                        follow_camera = camera::FollowCamera::new(player.position);
-                        clock.clear_time();
-                        jump_input.pause(space_held);
-                        // Остальные шаги кадра не должны сразу сдвинуть персонажа со старта.
+                    if player.is_below_fall_limit() {
+                        restore_requested = true;
                         break;
                     }
                     if let Some(id) = hazard_contact {
@@ -349,6 +353,7 @@ fn build_scene(
                             pitch,
                         });
                     }
+                    section.update(player_bounds.center());
                     zone_events.extend(zone_set.update(player_bounds.center()));
                     if timing_demo {
                         demo_steps += 1;
@@ -362,6 +367,27 @@ fn build_scene(
                         }
                     }
                 }
+            }
+            if restore_requested {
+                let pose = recovery.restore(&mut section, &mut player, &colliders);
+                yaw = pose.yaw;
+                pitch = pose.pitch;
+                follow_camera = camera::FollowCamera::new(player.position);
+                clock.clear_time();
+                jump_input.pause(space_held);
+                return_input.pause(return_held);
+                hazard_hold = 0.0;
+                if let Some(id) = hazard_alert.take() {
+                    hazard_visuals.set_alert(context.scene(), id, false)?;
+                }
+                let player_center = collision::player_bounds(player.position).center();
+                zone_set.reset_at(player_center);
+                hazard_set.reset_at(player.position);
+                zone_events.clear();
+                zone_visuals.synchronize(context.scene(), &zone_set)?;
+            }
+            if let Some(visuals) = &mut section_visuals {
+                visuals.synchronize(context.scene(), &section)?;
             }
             zone_visuals.apply(context.scene(), &zone_events)?;
             if checkpoint_activated && let Some(visuals) = &mut checkpoint_visuals {
