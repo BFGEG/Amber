@@ -26,6 +26,7 @@ const TERRACE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/terrace
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, -0.46, 0.0);
 const TIMING_DIRECTION: Vec3 = Vec3::X;
 const MOUSE_SENSITIVITY: f32 = 0.002;
+const HAZARD_HOLD_SECONDS: f32 = 0.15;
 
 fn build_scene(
     engine: &mut Engine,
@@ -87,7 +88,7 @@ fn build_scene(
     } else {
         world::hazard_zones().to_vec()
     };
-    zone_scene::add_hazard_visuals(engine.scene(), root, cube, &hazards)?;
+    let hazard_visuals = zone_scene::add_hazard_visuals(engine.scene(), root, cube, &hazards)?;
     let mut hazard_set = zone::ZoneSet::new(hazards.iter().copied());
 
     let mut blocks = Vec::new();
@@ -202,6 +203,7 @@ fn build_scene(
     let mut pitch = initial_direction.y.asin();
     let mut clock = simulation::FixedClock::default();
     let mut jump_input = input::JumpInput::default();
+    let mut hazard_hold = 0.0_f32;
     let mut demo_steps = 0;
     let mut demo_frames = 0;
     let mut demo_elapsed = 0.0;
@@ -260,45 +262,60 @@ fn build_scene(
                 }
             }
             let mut zone_events = Vec::new();
-            for _ in 0..steps {
-                if timing_demo && demo_steps == DEMO_STEPS {
-                    break;
-                }
-                player.fixed_update(
-                    movement,
-                    jump_input.take(),
-                    speed_mode,
-                    simulation::FixedClock::STEP as f32,
-                    &colliders,
-                );
-                let player_bounds = collision::player_bounds(player.position);
-                let hazard_contact = hazard_set.update_bounds(player_bounds).iter().any(|event| {
-                    matches!(
-                        event,
-                        zone::ZoneEvent::Entered(_) | zone::ZoneEvent::Stayed(_)
-                    )
-                });
-                let fell = player.respawn_if_fallen(start_position, &colliders);
-                if hazard_contact && !fell {
+            if hazard_hold > 0.0 {
+                hazard_hold = (hazard_hold - time.time_since_last_frame).max(0.0);
+                if hazard_hold == 0.0 {
                     player.respawn(start_position, &colliders);
-                }
-                if fell || hazard_contact {
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
                     jump_input.pause(space_held);
-                    // Остальные шаги кадра не должны сразу сдвинуть персонажа со старта.
-                    break;
+                    hazard_visuals.set_alert(context.scene(), false)?;
                 }
-                zone_events.extend(zone_set.update(player_bounds.center()));
-                if timing_demo {
-                    demo_steps += 1;
-                    if demo_steps == DEMO_STEPS {
-                        println!(
-                            "Прогон: 120 шагов, 2 с симуляции, {:.3} м; {:.2} с активных кадров, {:.1} FPS",
-                            player.position.distance(start_position),
-                            demo_elapsed,
-                            f64::from(demo_frames) / demo_elapsed,
-                        );
+            } else {
+                for _ in 0..steps {
+                    if timing_demo && demo_steps == DEMO_STEPS {
+                        break;
+                    }
+                    player.fixed_update(
+                        movement,
+                        jump_input.take(),
+                        speed_mode,
+                        simulation::FixedClock::STEP as f32,
+                        &colliders,
+                    );
+                    let player_bounds = collision::player_bounds(player.position);
+                    let hazard_contact = hazard_set.update(player.position).iter().any(|event| {
+                        matches!(
+                            event,
+                            zone::ZoneEvent::Entered(_) | zone::ZoneEvent::Stayed(_)
+                        )
+                    });
+                    let fell = player.respawn_if_fallen(start_position, &colliders);
+                    if fell {
+                        follow_camera = camera::FollowCamera::new(player.position);
+                        clock.clear_time();
+                        jump_input.pause(space_held);
+                        // Остальные шаги кадра не должны сразу сдвинуть персонажа со старта.
+                        break;
+                    }
+                    if hazard_contact {
+                        hazard_hold = HAZARD_HOLD_SECONDS;
+                        hazard_visuals.set_alert(context.scene(), true)?;
+                        clock.clear_time();
+                        jump_input.pause(space_held);
+                        break;
+                    }
+                    zone_events.extend(zone_set.update(player_bounds.center()));
+                    if timing_demo {
+                        demo_steps += 1;
+                        if demo_steps == DEMO_STEPS {
+                            println!(
+                                "Прогон: 120 шагов, 2 с симуляции, {:.3} м; {:.2} с активных кадров, {:.1} FPS",
+                                player.position.distance(start_position),
+                                demo_elapsed,
+                                f64::from(demo_frames) / demo_elapsed,
+                            );
+                        }
                     }
                 }
             }

@@ -29,15 +29,6 @@ impl Aabb {
             && point.z >= self.min.z
             && point.z <= self.max.z
     }
-
-    pub fn intersects(self, other: Aabb) -> bool {
-        self.min.x <= other.max.x
-            && self.max.x >= other.min.x
-            && self.min.y <= other.max.y
-            && self.max.y >= other.min.y
-            && self.min.z <= other.max.z
-            && self.max.z >= other.min.z
-    }
 }
 
 pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
@@ -59,12 +50,12 @@ pub fn event_zones() -> [zone::Zone; 2] {
 
 pub const HAZARD_AFTER_ASCENT: [Aabb; 2] = [
     Aabb {
-        min: Vec3::new(-33.0, 3.75, -7.8),
-        max: Vec3::new(-32.2, 3.95, -1.8),
+        min: Vec3::new(-38.0, 3.75, -7.8),
+        max: Vec3::new(-37.2, 3.79, -1.8),
     },
     Aabb {
-        min: Vec3::new(-37.0, 3.75, -7.8),
-        max: Vec3::new(-36.2, 3.95, -1.8),
+        min: Vec3::new(-43.0, 3.75, -7.8),
+        max: Vec3::new(-42.2, 3.79, -1.8),
     },
 ];
 
@@ -263,6 +254,11 @@ mod tests {
             assert!(hazard.min.z >= terrace.min.z);
             assert!(hazard.max.z <= terrace.max.z);
             assert_eq!(hazard.min.y, terrace.max.y);
+            assert!(hazard.contains(Vec3::new(
+                hazard.center().x,
+                terrace.max.y,
+                hazard.center().z
+            )));
         }
         assert!(HAZARD_AFTER_ASCENT[1].max.x < HAZARD_AFTER_ASCENT[0].min.x);
     }
