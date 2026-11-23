@@ -89,6 +89,8 @@ impl SceneState {
         };
         let initial_direction = if timing_demo {
             Vec3::X
+        } else if kind == SceneKind::Demo {
+            Vec3::new(-1.0, -0.26, 0.0)
         } else {
             Vec3::new(-1.0, -0.46, 0.0)
         }
@@ -104,7 +106,7 @@ impl SceneState {
             colliders: match kind {
                 SceneKind::Course => world::course_colliders(),
                 SceneKind::Physics => world::diagnostic_colliders(),
-                SceneKind::Demo => vec![world::DEMO_FLOOR.bounds()],
+                SceneKind::Demo => world::demo_colliders().collect(),
             },
             recovery: Recovery::new(CheckpointPose {
                 position: start_position,
