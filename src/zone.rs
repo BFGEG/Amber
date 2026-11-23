@@ -60,6 +60,20 @@ impl ZoneSet {
         Self { zones, states }
     }
 
+    /// Восстанавливает события участка без искусственного входа в точке появления.
+    pub fn reset_at(&mut self, player: Vec3) {
+        for (zone, state) in self.zones.iter().zip(&mut self.states) {
+            *state = ZoneState {
+                inside: zone.bounds.contains(player),
+                fired: false,
+            };
+        }
+    }
+
+    pub fn is_inside(&self, id: ZoneId) -> bool {
+        self.states.get(id.0).is_some_and(|state| state.inside)
+    }
+
     pub fn update(&mut self, player: Vec3) -> Vec<ZoneEvent> {
         let mut events = Vec::new();
         for (index, zone) in self.zones.iter().enumerate() {
@@ -112,6 +126,20 @@ mod tests {
 
     fn at(x: f32, y: f32, z: f32) -> Vec3 {
         Vec3::new(x, y, z)
+    }
+
+    #[test]
+    fn resetting_inside_a_zone_tracks_presence_without_firing_an_entry() {
+        let mut zones = ZoneSet::new([Zone::one_shot(bounds([0.0, 0.0, 0.0], [2.0, 2.0, 2.0]))]);
+        zones.reset_at(Vec3::ONE);
+        assert!(zones.is_inside(ZoneId(0)));
+        assert_eq!(zones.update(Vec3::ONE), vec![ZoneEvent::Stayed(ZoneId(0))]);
+        zones.update(-Vec3::ONE);
+        assert!(
+            zones
+                .update(Vec3::ONE)
+                .contains(&ZoneEvent::Triggered(ZoneId(0)))
+        );
     }
 
     #[test]

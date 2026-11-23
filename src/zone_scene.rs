@@ -3,7 +3,7 @@ use bfge::{SceneApi, SceneError, SceneNodeId, SceneObjectId, Transform};
 
 use crate::collider_debug;
 use crate::world::Aabb;
-use crate::zone::{Zone, ZoneEvent, ZoneId, ZoneMode};
+use crate::zone::{Zone, ZoneEvent, ZoneId, ZoneMode, ZoneSet};
 
 const REPEATING_FRAME_COLOR: [f32; 3] = [0.1, 0.8, 1.0];
 const ONE_SHOT_FRAME_COLOR: [f32; 3] = [0.9, 0.3, 1.0];
@@ -269,6 +269,22 @@ impl HazardVisuals {
 }
 
 impl ZoneVisuals {
+    pub fn synchronize(
+        &mut self,
+        scene: &mut dyn SceneApi,
+        zones: &ZoneSet,
+    ) -> Result<(), SceneError> {
+        for marker in &mut self.markers {
+            let active = zones.is_inside(marker.id);
+            scene.set_object_color(
+                marker.object,
+                if active { ACTIVE_COLOR } else { IDLE_COLOR },
+            )?;
+            marker.active = active;
+        }
+        Ok(())
+    }
+
     pub fn apply(
         &mut self,
         scene: &mut dyn SceneApi,

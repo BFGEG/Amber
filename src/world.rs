@@ -43,6 +43,11 @@ pub const CHECKPOINT_ZONE: Aabb = Aabb {
 
 pub const CHECKPOINT_POSITION: Vec3 = Vec3::new(-34.75, 3.75, -4.8);
 
+pub const SECTION_EVENT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-41.0, 3.75, -6.0),
+    max: Vec3::new(-38.5, 5.8, -3.6),
+};
+
 pub fn event_zones() -> [zone::Zone; 1] {
     [zone::Zone::repeating(TUTORIAL_EVENT_ZONE)]
 }
