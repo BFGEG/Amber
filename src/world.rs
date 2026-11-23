@@ -57,19 +57,26 @@ pub fn event_zones() -> [zone::Zone; 2] {
     ]
 }
 
-pub const HAZARD_STRIP: Aabb = Aabb {
-    min: Vec3::new(-5.4, 0.0, 0.0),
-    max: Vec3::new(-4.6, 0.2, 4.0),
-};
+pub const HAZARD_AFTER_ASCENT: [Aabb; 2] = [
+    Aabb {
+        min: Vec3::new(-33.0, 3.75, -7.8),
+        max: Vec3::new(-32.2, 3.95, -1.8),
+    },
+    Aabb {
+        min: Vec3::new(-37.0, 3.75, -7.8),
+        max: Vec3::new(-36.2, 3.95, -1.8),
+    },
+];
 
 pub const HAZARD_UNDER_PLATFORMS: Aabb = Aabb {
     min: Vec3::new(-30.0, -4.0, -8.0),
     max: Vec3::new(-10.0, -1.0, 5.0),
 };
 
-pub fn hazard_zones() -> [zone::Zone; 2] {
+pub fn hazard_zones() -> [zone::Zone; 3] {
     [
-        zone::Zone::repeating(HAZARD_STRIP),
+        zone::Zone::repeating(HAZARD_AFTER_ASCENT[0]),
+        zone::Zone::repeating(HAZARD_AFTER_ASCENT[1]),
         zone::Zone::repeating(HAZARD_UNDER_PLATFORMS),
     ]
 }
@@ -248,13 +255,16 @@ mod tests {
     }
 
     #[test]
-    fn hazard_strip_lies_on_lower_terrace() {
-        let terrace = LOWER_TERRACE.bounds();
-        assert!(HAZARD_STRIP.min.x >= terrace.min.x);
-        assert!(HAZARD_STRIP.max.x <= terrace.max.x);
-        assert!(HAZARD_STRIP.min.z >= terrace.min.z);
-        assert!(HAZARD_STRIP.max.z <= terrace.max.z);
-        assert_eq!(HAZARD_STRIP.min.y, terrace.max.y);
+    fn hazard_strips_lie_on_upper_terrace() {
+        let terrace = UPPER_TERRACE.bounds();
+        for hazard in HAZARD_AFTER_ASCENT {
+            assert!(hazard.min.x >= terrace.min.x);
+            assert!(hazard.max.x <= terrace.max.x);
+            assert!(hazard.min.z >= terrace.min.z);
+            assert!(hazard.max.z <= terrace.max.z);
+            assert_eq!(hazard.min.y, terrace.max.y);
+        }
+        assert!(HAZARD_AFTER_ASCENT[1].max.x < HAZARD_AFTER_ASCENT[0].min.x);
     }
 
     #[test]
