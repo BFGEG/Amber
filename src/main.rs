@@ -6,6 +6,8 @@ mod input;
 mod simulation;
 mod skybox;
 mod world;
+mod zone;
+mod zone_scene;
 
 use std::error::Error;
 use std::path::Path;
@@ -71,6 +73,14 @@ fn build_scene(
     let corwin_weapons = engine.load_model(Path::new(CORWIN_WEAPONS), corwin)?;
 
     let cube = engine.load_model(Path::new(CUBE_MODEL), root)?;
+
+    let zones = if physics_demo {
+        Vec::new()
+    } else {
+        world::event_zones().to_vec()
+    };
+    let mut zone_visuals = zone_scene::add_to_scene(engine.scene(), root, cube, &zones)?;
+    let mut zone_set = zone::ZoneSet::new(zones);
 
     let mut blocks = Vec::new();
     if physics_demo {
@@ -241,6 +251,7 @@ fn build_scene(
                     demo_elapsed += f64::from(time.time_since_last_frame);
                 }
             }
+            let mut zone_events = Vec::new();
             for _ in 0..steps {
                 if timing_demo && demo_steps == DEMO_STEPS {
                     break;
@@ -252,7 +263,11 @@ fn build_scene(
                     simulation::FixedClock::STEP as f32,
                     &colliders,
                 );
-                if player.respawn_if_fallen(start_position, &colliders) {
+                let respawned = player.respawn_if_fallen(start_position, &colliders);
+                zone_events.extend(
+                    zone_set.update(collision::player_bounds(player.position)),
+                );
+                if respawned {
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
                     jump_input.pause(space_held);
@@ -271,6 +286,7 @@ fn build_scene(
                     }
                 }
             }
+            zone_visuals.apply(context.scene(), &zone_events)?;
             if toggle_debug {
                 debug_visible = !debug_visible;
                 for object in &outlines {

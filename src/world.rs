@@ -1,5 +1,7 @@
 use bfge::math::Vec3;
 
+use crate::zone;
+
 pub const START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 pub const TIMING_START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, -6.0);
 
@@ -18,6 +20,32 @@ impl Aabb {
     pub fn size(self) -> Vec3 {
         self.max - self.min
     }
+
+    pub fn overlaps(self, other: Aabb) -> bool {
+        self.min.x < other.max.x
+            && self.max.x > other.min.x
+            && self.min.y < other.max.y
+            && self.max.y > other.min.y
+            && self.min.z < other.max.z
+            && self.max.z > other.min.z
+    }
+}
+
+pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-8.0, 0.0, 0.5),
+    max: Vec3::new(-6.0, 2.0, 3.5),
+};
+
+pub const CHECKPOINT_EVENT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-18.5, 1.5, 0.5),
+    max: Vec3::new(-15.5, 3.5, 3.5),
+};
+
+pub fn event_zones() -> [zone::Zone; 2] {
+    [
+        zone::Zone::repeating(TUTORIAL_EVENT_ZONE),
+        zone::Zone::one_shot(CHECKPOINT_EVENT_ZONE),
+    ]
 }
 
 #[derive(Clone, Copy)]
