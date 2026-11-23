@@ -224,6 +224,14 @@ fn build_scene(
             if input.is_key_pressed(KeyCode::KeyA) {
                 movement -= right;
             }
+            let precise = !timing_demo
+                && (input.is_key_pressed(KeyCode::ShiftLeft)
+                    || input.is_key_pressed(KeyCode::ShiftRight));
+            let speed_mode = if precise {
+                simulation::SpeedMode::Precise
+            } else {
+                simulation::SpeedMode::Normal
+            };
 
             const DEMO_STEPS: usize = 120;
             if timing_demo {
@@ -237,7 +245,13 @@ fn build_scene(
                 if timing_demo && demo_steps == DEMO_STEPS {
                     break;
                 }
-                player.fixed_update(movement, jump_input.take(), simulation::FixedClock::STEP as f32, &colliders);
+                player.fixed_update(
+                    movement,
+                    jump_input.take(),
+                    speed_mode,
+                    simulation::FixedClock::STEP as f32,
+                    &colliders,
+                );
                 if player.respawn_if_fallen(start_position, &colliders) {
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
