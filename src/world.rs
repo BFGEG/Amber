@@ -37,8 +37,8 @@ pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
 };
 
 pub const CHECKPOINT_EVENT_ZONE: Aabb = Aabb {
-    min: Vec3::new(-18.5, 1.5, 0.5),
-    max: Vec3::new(-15.5, 3.5, 3.5),
+    min: Vec3::new(-19.0, 1.5, 1.0),
+    max: Vec3::new(-17.0, 3.5, 3.0),
 };
 
 pub fn event_zones() -> [zone::Zone; 2] {
