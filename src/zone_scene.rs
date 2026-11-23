@@ -26,6 +26,7 @@ struct ZoneMarker {
 
 pub struct ZoneVisuals {
     markers: Vec<ZoneMarker>,
+    objects: Vec<SceneObjectId>,
 }
 
 struct HazardPart {
@@ -115,6 +116,21 @@ pub fn add_checkpoint_visuals(
 }
 
 impl CheckpointVisuals {
+    pub fn set_visible(&self, scene: &mut dyn SceneApi, visible: bool) -> Result<(), SceneError> {
+        for object in &self.objects {
+            scene.set_object_visible(*object, visible)?;
+        }
+        Ok(())
+    }
+
+    pub fn reset(&mut self, scene: &mut dyn SceneApi) -> Result<(), SceneError> {
+        for object in &self.objects {
+            scene.set_object_color(*object, IDLE_COLOR)?;
+        }
+        self.active = false;
+        Ok(())
+    }
+
     pub fn activate(&mut self, scene: &mut dyn SceneApi) -> Result<(), SceneError> {
         if !self.active {
             for object in &self.objects {
@@ -133,6 +149,7 @@ pub fn add_to_scene(
     zones: &[Zone],
 ) -> Result<ZoneVisuals, SceneError> {
     let mut markers = Vec::with_capacity(zones.len());
+    let mut objects = Vec::new();
     for (index, zone) in zones.iter().enumerate() {
         let frame_color = match zone.mode {
             ZoneMode::Repeating => REPEATING_FRAME_COLOR,
@@ -140,6 +157,7 @@ pub fn add_to_scene(
         };
         for object in collider_debug::create_outline(scene, root, cube, zone.bounds, frame_color)? {
             scene.set_object_visible(object, true)?;
+            objects.push(object);
         }
 
         let center = zone.bounds.center();
@@ -153,6 +171,7 @@ pub fn add_to_scene(
             },
         )?;
         let object = scene.clone_object(cube, node)?;
+        objects.push(object);
         scene.set_object_color(object, IDLE_COLOR)?;
         markers.push(ZoneMarker {
             id: ZoneId(index),
@@ -160,7 +179,7 @@ pub fn add_to_scene(
             active: false,
         });
     }
-    Ok(ZoneVisuals { markers })
+    Ok(ZoneVisuals { markers, objects })
 }
 
 pub fn add_hazard_visuals(
@@ -245,6 +264,22 @@ pub fn add_hazard_visuals(
 }
 
 impl HazardVisuals {
+    pub fn set_visible(&self, scene: &mut dyn SceneApi, visible: bool) -> Result<(), SceneError> {
+        for hazard in &self.hazards {
+            for part in hazard {
+                scene.set_object_visible(part.object, visible)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn reset(&self, scene: &mut dyn SceneApi) -> Result<(), SceneError> {
+        for id in 0..self.hazards.len() {
+            self.set_alert(scene, ZoneId(id), false)?;
+        }
+        Ok(())
+    }
+
     pub fn set_alert(
         &self,
         scene: &mut dyn SceneApi,
@@ -269,6 +304,13 @@ impl HazardVisuals {
 }
 
 impl ZoneVisuals {
+    pub fn set_visible(&self, scene: &mut dyn SceneApi, visible: bool) -> Result<(), SceneError> {
+        for object in &self.objects {
+            scene.set_object_visible(*object, visible)?;
+        }
+        Ok(())
+    }
+
     pub fn synchronize(
         &mut self,
         scene: &mut dyn SceneApi,

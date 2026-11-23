@@ -6,7 +6,9 @@ mod input;
 mod pause;
 mod pause_scene;
 mod recovery;
+mod scene_controls;
 mod scene_state;
+mod scene_visuals;
 mod section;
 mod section_scene;
 mod simulation;
@@ -52,6 +54,7 @@ fn build_scene(
     } else {
         (&[world::LOWER_TERRACE, world::UPPER_TERRACE], TERRACE_MODEL)
     };
+    let mut primary_objects = Vec::new();
     for ground in grounds {
         let node = engine.scene().create_node(root)?;
         engine.scene().set_node_transform(
@@ -62,7 +65,7 @@ fn build_scene(
                 ..Transform::default()
             },
         )?;
-        engine.load_model(Path::new(ground_model), node)?;
+        primary_objects.push(engine.load_model(Path::new(ground_model), node)?);
     }
 
     let corwin = engine.scene().create_node(root)?;
@@ -80,8 +83,8 @@ fn build_scene(
     let cube = engine.load_model(Path::new(CUBE_MODEL), root)?;
 
     let zones = state.kind.event_zones();
-    let mut zone_visuals = zone_scene::add_to_scene(engine.scene(), root, cube, &zones)?;
-    let mut checkpoint_visuals = if physics_demo {
+    let zone_visuals = zone_scene::add_to_scene(engine.scene(), root, cube, &zones)?;
+    let checkpoint_visuals = if physics_demo {
         None
     } else {
         Some(zone_scene::add_checkpoint_visuals(
@@ -93,7 +96,7 @@ fn build_scene(
     };
 
     let demo_zone = state.kind.section_zone();
-    let mut section_visuals = if let Some(bounds) = demo_zone {
+    let section_visuals = if let Some(bounds) = demo_zone {
         Some(section_scene::add_to_scene(
             engine.scene(),
             root,
@@ -145,11 +148,12 @@ fn build_scene(
         )?;
         let object = engine.scene().clone_object(cube, node)?;
         engine.scene().set_object_color(object, color)?;
+        primary_objects.push(object);
     }
 
-    let mut outlines = Vec::new();
+    let mut primary_outlines = Vec::new();
     for bounds in &state.colliders {
-        outlines.extend(collider_debug::create_outline(
+        primary_outlines.extend(collider_debug::create_outline(
             engine.scene(),
             root,
             cube,
@@ -158,20 +162,50 @@ fn build_scene(
         )?);
     }
     let player_outline = engine.scene().create_node(root)?;
-    outlines.extend(collider_debug::create_outline(
+    let player_outlines = collider_debug::create_outline(
         engine.scene(),
         player_outline,
         cube,
         collision::player_bounds(Vec3::ZERO),
         [1.0, 0.65, 0.05],
-    )?);
+    )?;
     engine.scene().set_node_transform(
         player_outline,
         Transform::from_translation(state.player.position),
     )?;
-    for object in &outlines {
-        engine.scene().set_object_visible(*object, debug_visible)?;
-    }
+    let demo_floor = world::DEMO_FLOOR;
+    let demo_node = engine.scene().create_node(root)?;
+    engine.scene().set_node_transform(
+        demo_node,
+        Transform {
+            translation: demo_floor.center,
+            scale: demo_floor.size,
+            ..Transform::default()
+        },
+    )?;
+    let demo_object = engine.scene().clone_object(cube, demo_node)?;
+    engine
+        .scene()
+        .set_object_color(demo_object, [0.08, 0.25, 0.65])?;
+    let demo_outlines = collider_debug::create_outline(
+        engine.scene(),
+        root,
+        cube,
+        demo_floor.bounds(),
+        [0.1, 1.0, 0.2],
+    )?;
+    let mut visuals = scene_visuals::SceneVisuals {
+        primary_objects,
+        demo_objects: vec![demo_object],
+        primary_outlines,
+        demo_outlines,
+        player_outlines,
+        zones: zone_visuals,
+        hazards: hazard_visuals,
+        checkpoint: checkpoint_visuals,
+        section: section_visuals,
+    };
+    visuals.activate(engine.scene(), &state, debug_visible)?;
     let pause_card = engine.load_model(Path::new(pause_scene::CARD_MODEL), root)?;
     let mut pause_overlay = pause_scene::PauseOverlay::new(engine.scene(), pause_card)?;
     engine.scene().remove_object(cube)?;
@@ -203,8 +237,28 @@ fn build_scene(
         .set_object_visible(corwin_weapons, corwin_visible)?;
     engine.scene().set_viewpoint(viewpoint)?;
 
+    let mut scene_controls = scene_controls::SceneControls::new(kind);
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
+            let request = scene_controls.request(
+                state.kind, context.input().is_focused(),
+                context.input().is_key_pressed(KeyCode::F5), context.input().is_key_pressed(KeyCode::F6),
+            );
+            if let Some(kind) = request {
+                state = scene_state::SceneState::new(kind, timing_demo);
+                visuals.activate(context.scene(), &state, debug_visible)?;
+                pause_overlay.synchronize(context.scene(), false)?;
+                context.scene().set_node_transform(corwin, Transform {
+                    translation: state.player.position, rotation: state.player.rotation, ..Transform::default()
+                })?;
+                context.scene().set_node_transform(player_outline, Transform::from_translation(state.player.position))?;
+                let mut viewpoint = context.scene().viewpoint();
+                corwin_visible = state.follow_camera.place(&mut viewpoint, state.player.position, state.initial_direction, &state.colliders);
+                context.scene().set_object_visible(corwin_model, corwin_visible)?;
+                context.scene().set_object_visible(corwin_weapons, corwin_visible)?;
+                context.scene().set_viewpoint(viewpoint)?;
+                return Ok(());
+            }
             let focused = context.input().is_focused();
             let escape_held = context.input().is_key_pressed(KeyCode::Escape);
             let was_paused = state.pause.is_paused();
@@ -303,7 +357,7 @@ fn build_scene(
                     if let Some(id) = hazard_contact {
                         state.hazard_hold = HAZARD_HOLD_SECONDS;
                         state.hazard_alert = Some(id);
-                        hazard_visuals.set_alert(context.scene(), id, true)?;
+                        visuals.hazards.set_alert(context.scene(), id, true)?;
                         state.clock.clear_time();
                         state.jump_input.pause(space_held);
                         break;
@@ -341,26 +395,24 @@ fn build_scene(
                 state.return_input.pause(return_held);
                 state.hazard_hold = 0.0;
                 if let Some(id) = state.hazard_alert.take() {
-                    hazard_visuals.set_alert(context.scene(), id, false)?;
+                    visuals.hazards.set_alert(context.scene(), id, false)?;
                 }
                 let player_center = collision::player_bounds(state.player.position).center();
                 state.zone_set.reset_at(player_center);
                 state.hazard_set.reset_at(state.player.position);
                 zone_events.clear();
-                zone_visuals.synchronize(context.scene(), &state.zone_set)?;
+                visuals.zones.synchronize(context.scene(), &state.zone_set)?;
             }
-            if let Some(visuals) = &mut section_visuals {
+            if let Some(visuals) = &mut visuals.section {
                 visuals.synchronize(context.scene(), &state.section)?;
             }
-            zone_visuals.apply(context.scene(), &zone_events)?;
-            if checkpoint_activated && let Some(visuals) = &mut checkpoint_visuals {
+            visuals.zones.apply(context.scene(), &zone_events)?;
+            if checkpoint_activated && let Some(visuals) = &mut visuals.checkpoint {
                 visuals.activate(context.scene())?;
             }
             if toggle_debug {
                 debug_visible = !debug_visible;
-                for object in &outlines {
-                    context.scene().set_object_visible(*object, debug_visible)?;
-                }
+                visuals.set_debug(context.scene(), state.kind, debug_visible)?;
             }
             context.scene().set_node_transform(
                 corwin,
