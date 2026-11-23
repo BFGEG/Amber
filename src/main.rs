@@ -3,6 +3,8 @@ mod collider_debug;
 mod collision;
 mod devtools;
 mod input;
+mod pause;
+mod pause_scene;
 mod recovery;
 mod section;
 mod section_scene;
@@ -192,6 +194,7 @@ fn build_scene(
     for object in &outlines {
         engine.scene().set_object_visible(*object, debug_visible)?;
     }
+    let mut pause_overlay = pause_scene::PauseOverlay::new(engine.scene(), cube)?;
     engine.scene().remove_object(cube)?;
     let mut debug_pressed = false;
 
@@ -239,6 +242,7 @@ fn build_scene(
         pitch,
     });
     let mut clock = simulation::FixedClock::default();
+    let mut pause = pause::PauseState::default();
     let mut jump_input = input::ButtonInput::default();
     let mut return_input = input::ButtonInput::default();
     let mut hazard_hold = 0.0_f32;
@@ -248,11 +252,20 @@ fn build_scene(
     let mut demo_elapsed = 0.0;
     engine.add_event(EngineEvent {
         frame_started: Box::new(move |context, time| {
+            let focused = context.input().is_focused();
+            let escape_held = context.input().is_key_pressed(KeyCode::Escape);
+            let was_paused = pause.is_paused();
+            let steps = pause.frame_steps(&mut clock, time.time_since_last_frame, focused, escape_held);
+            pause_overlay.synchronize(context.scene(), pause.is_paused())?;
+            if was_paused && !pause.is_paused() && player.grounded {
+                // Отпущенное на паузе направление не должно оставлять инерцию на земле.
+                player.horizontal_velocity = Vec3::ZERO;
+            }
             let input = context.input();
-            let Some(steps) = clock.frame_steps(time.time_since_last_frame, input.is_focused()) else {
+            let Some(steps) = steps else {
                 jump_input.pause(input.is_key_pressed(KeyCode::Space));
                 return_input.pause(input.is_key_pressed(KeyCode::KeyR));
-                debug_pressed = false;
+                debug_pressed = input.is_key_pressed(KeyCode::F3);
                 return Ok(());
             };
             let space_held = input.is_key_pressed(KeyCode::Space);
