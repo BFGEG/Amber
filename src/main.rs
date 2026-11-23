@@ -3,6 +3,7 @@ mod collider_debug;
 mod collision;
 mod devtools;
 mod input;
+mod recovery;
 mod simulation;
 mod skybox;
 mod world;
@@ -82,6 +83,22 @@ fn build_scene(
     };
     let mut zone_visuals = zone_scene::add_to_scene(engine.scene(), root, cube, &zones)?;
     let mut zone_set = zone::ZoneSet::new(zones);
+    let checkpoint_zones = if physics_demo {
+        Vec::new()
+    } else {
+        vec![zone::Zone::one_shot(world::CHECKPOINT_ZONE)]
+    };
+    let mut checkpoint_set = zone::ZoneSet::new(checkpoint_zones);
+    let mut checkpoint_visuals = if physics_demo {
+        None
+    } else {
+        Some(zone_scene::add_checkpoint_visuals(
+            engine.scene(),
+            root,
+            cube,
+            world::CHECKPOINT_ZONE,
+        )?)
+    };
 
     let hazards = if physics_demo {
         Vec::new()
@@ -201,6 +218,11 @@ fn build_scene(
 
     let mut yaw = initial_direction.x.atan2(-initial_direction.z);
     let mut pitch = initial_direction.y.asin();
+    let mut recovery = recovery::Recovery::new(recovery::CheckpointPose {
+        position: start_position,
+        yaw,
+        pitch,
+    });
     let mut clock = simulation::FixedClock::default();
     let mut jump_input = input::JumpInput::default();
     let mut hazard_hold = 0.0_f32;
@@ -227,7 +249,6 @@ fn build_scene(
             yaw += dx as f32 * MOUSE_SENSITIVITY;
 
             let (yaw_sin, yaw_cos) = yaw.sin_cos();
-            let (pitch_sin, pitch_cos) = pitch.sin_cos();
 
             let forward = Vec3::new(yaw_sin, 0.0, -yaw_cos);
             let right = Vec3::new(yaw_cos, 0.0, yaw_sin);
@@ -263,10 +284,13 @@ fn build_scene(
                 }
             }
             let mut zone_events = Vec::new();
+            let mut checkpoint_activated = false;
             if hazard_hold > 0.0 {
                 hazard_hold = (hazard_hold - time.time_since_last_frame).max(0.0);
                 if hazard_hold == 0.0 {
-                    player.respawn(start_position, &colliders);
+                    player.respawn(recovery.pose().position, &colliders);
+                    yaw = recovery.pose().yaw;
+                    pitch = recovery.pose().pitch;
                     follow_camera = camera::FollowCamera::new(player.position);
                     clock.clear_time();
                     jump_input.pause(space_held);
@@ -296,8 +320,10 @@ fn build_scene(
                                 _ => None,
                             }
                         });
-                    let fell = player.respawn_if_fallen(start_position, &colliders);
+                    let fell = player.respawn_if_fallen(recovery.pose().position, &colliders);
                     if fell {
+                        yaw = recovery.pose().yaw;
+                        pitch = recovery.pose().pitch;
                         follow_camera = camera::FollowCamera::new(player.position);
                         clock.clear_time();
                         jump_input.pause(space_held);
@@ -311,6 +337,14 @@ fn build_scene(
                         clock.clear_time();
                         jump_input.pause(space_held);
                         break;
+                    }
+                    let events = checkpoint_set.update(player_bounds.center());
+                    if events.contains(&zone::ZoneEvent::Triggered(zone::ZoneId(0))) {
+                        checkpoint_activated |= recovery.activate(recovery::CheckpointPose {
+                            position: world::CHECKPOINT_POSITION,
+                            yaw,
+                            pitch,
+                        });
                     }
                     zone_events.extend(zone_set.update(player_bounds.center()));
                     if timing_demo {
@@ -327,6 +361,9 @@ fn build_scene(
                 }
             }
             zone_visuals.apply(context.scene(), &zone_events)?;
+            if checkpoint_activated && let Some(visuals) = &mut checkpoint_visuals {
+                visuals.activate(context.scene())?;
+            }
             if toggle_debug {
                 debug_visible = !debug_visible;
                 for object in &outlines {
@@ -348,6 +385,9 @@ fn build_scene(
                 )?;
             }
             let mut viewpoint = context.scene().viewpoint();
+            // После возврата используем восстановленный ракурс уже в этом кадре.
+            let (yaw_sin, yaw_cos) = yaw.sin_cos();
+            let (pitch_sin, pitch_cos) = pitch.sin_cos();
             let direction = Vec3::new(yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos);
             follow_camera.update_height(player.position, time.time_since_last_frame);
             let visible = follow_camera.place(&mut viewpoint, player.position, direction, &colliders);

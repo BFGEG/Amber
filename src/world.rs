@@ -36,26 +36,25 @@ pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
     max: Vec3::new(-6.0, 2.0, 3.5),
 };
 
-pub const CHECKPOINT_EVENT_ZONE: Aabb = Aabb {
-    min: Vec3::new(-19.3, 1.5, 0.7),
-    max: Vec3::new(-16.7, 3.5, 3.3),
+pub const CHECKPOINT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-36.0, 3.75, -7.2),
+    max: Vec3::new(-33.5, 5.6, -2.4),
 };
 
-pub fn event_zones() -> [zone::Zone; 2] {
-    [
-        zone::Zone::repeating(TUTORIAL_EVENT_ZONE),
-        zone::Zone::one_shot(CHECKPOINT_EVENT_ZONE),
-    ]
+pub const CHECKPOINT_POSITION: Vec3 = Vec3::new(-34.75, 3.75, -4.8);
+
+pub fn event_zones() -> [zone::Zone; 1] {
+    [zone::Zone::repeating(TUTORIAL_EVENT_ZONE)]
 }
 
 pub const HAZARD_AFTER_ASCENT: [Aabb; 2] = [
     Aabb {
-        min: Vec3::new(-38.0, 3.75, -7.8),
-        max: Vec3::new(-37.2, 3.79, -1.8),
+        min: Vec3::new(-46.0, 3.75, -7.8),
+        max: Vec3::new(-45.2, 3.79, -1.8),
     },
     Aabb {
-        min: Vec3::new(-43.0, 3.75, -7.8),
-        max: Vec3::new(-42.2, 3.79, -1.8),
+        min: Vec3::new(-52.0, 3.75, -7.8),
+        max: Vec3::new(-51.2, 3.79, -1.8),
     },
 ];
 
