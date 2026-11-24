@@ -475,6 +475,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let physics_demo = devtools::physics_demo_enabled()? || timing_demo;
     let mut engine = Engine::new();
     engine.initialize(WindowDescriptor::new("Amber — тестовая сцена", 1280, 720))?;
+    engine.hide_cursor()?;
     let result = build_scene(
         &mut engine,
         timing_demo,
