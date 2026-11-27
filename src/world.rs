@@ -1,7 +1,68 @@
 use bfge::math::Vec3;
 
+use crate::zone;
+
 pub const START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, 2.0);
 pub const TIMING_START_POSITION: Vec3 = Vec3::new(-4.0, 0.0, -6.0);
+
+const DEMO_FLOOR: StaticBox = StaticBox {
+    center: Vec3::new(0.0, -0.25, 0.0),
+    size: Vec3::new(24.0, 0.5, 24.0),
+};
+
+fn demo_structure() -> impl Iterator<Item = (StaticBox, [f32; 3])> {
+    let block = |center, size, color| {
+        (
+            StaticBox {
+                center: Vec3::from_array(center),
+                size: Vec3::from_array(size),
+            },
+            color,
+        )
+    };
+    let base = [0.29, 0.34, 0.38];
+    let stone = [0.51, 0.52, 0.48];
+    let trim = [0.67, 0.63, 0.53];
+    [
+        (DEMO_FLOOR, base),
+        block([-7.5, 3.37, 0.0], [1.5, 0.54, 5.65], stone),
+        block([-7.5, 3.74, 0.0], [1.75, 0.2, 6.0], trim),
+        block([-7.5, 3.98, 0.0], [1.37, 0.28, 5.28], base),
+    ]
+    .into_iter()
+    .chain([-1.0, 1.0].into_iter().flat_map(move |side| {
+        let pier = 2.15 * side;
+        let wall = 4.5 * side;
+        [
+            block([-7.5, 0.23, pier], [1.8, 0.46, 1.65], base),
+            block([-7.5, 1.78, pier], [1.24, 2.64, 1.15], stone),
+            block([-7.5, 2.99, pier], [1.42, 0.22, 1.38], trim),
+            block([-4.2, 0.37, wall], [6.6, 0.74, 0.68], stone),
+            block([-4.2, 0.81, wall], [6.75, 0.14, 0.82], trim),
+            block([-1.25, 0.96, wall], [0.78, 0.32, 0.78], base),
+            block([-1.25, 1.22, wall], [0.56, 0.22, 0.56], [1.0, 0.66, 0.23]),
+        ]
+    }))
+}
+
+pub fn demo_colliders() -> impl Iterator<Item = Aabb> {
+    demo_structure().map(|(block, _)| block.bounds())
+}
+
+pub fn demo_blocks() -> impl Iterator<Item = (StaticBox, [f32; 3])> {
+    let path = (0..8).flat_map(|row| {
+        [-0.9, 0.9].map(move |z| {
+            (
+                StaticBox {
+                    center: Vec3::new(-0.9 - row as f32 * 1.28, 0.0, z),
+                    size: Vec3::new(1.24, 0.018, 1.76),
+                },
+                [0.52, 0.45, 0.34],
+            )
+        })
+    });
+    demo_structure().chain(path)
+}
 
 /// Неподвижная игровая область в мировых координатах; декор сюда не входит.
 #[derive(Clone, Copy)]
@@ -18,6 +79,69 @@ impl Aabb {
     pub fn size(self) -> Vec3 {
         self.max - self.min
     }
+
+    pub fn contains(self, point: Vec3) -> bool {
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
+            && point.z >= self.min.z
+            && point.z <= self.max.z
+    }
+}
+
+pub const TUTORIAL_EVENT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-8.0, 0.0, 0.5),
+    max: Vec3::new(-6.0, 2.0, 3.5),
+};
+
+pub const CHECKPOINT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-36.0, 3.75, -7.2),
+    max: Vec3::new(-33.5, 5.6, -2.4),
+};
+
+pub const CHECKPOINT_POSITION: Vec3 = Vec3::new(-34.75, 3.75, -4.8);
+
+pub const SECTION_EVENT_ZONE: Aabb = Aabb {
+    min: Vec3::new(-41.0, 3.75, -6.0),
+    max: Vec3::new(-38.5, 5.8, -3.6),
+};
+
+pub const EXIT_CENTER: Vec3 = Vec3::new(-58.0, 3.75, -4.8);
+pub const EXIT_RADIUS: f32 = 2.0;
+
+pub fn exit_contains(point: Vec3) -> bool {
+    let offset = point - EXIT_CENTER;
+    (0.0..=3.0).contains(&offset.y)
+        && offset.x * offset.x + offset.z * offset.z <= EXIT_RADIUS * EXIT_RADIUS
+}
+
+pub fn event_zones() -> [zone::Zone; 1] {
+    [zone::Zone::repeating(TUTORIAL_EVENT_ZONE)]
+}
+
+pub const HAZARD_AFTER_ASCENT: [Aabb; 2] = [
+    Aabb {
+        min: Vec3::new(-46.0, 3.75, -7.8),
+        max: Vec3::new(-45.2, 3.79, -1.8),
+    },
+    Aabb {
+        min: Vec3::new(-52.0, 3.75, -7.8),
+        max: Vec3::new(-51.2, 3.79, -1.8),
+    },
+];
+
+pub const HAZARD_UNDER_PLATFORMS: Aabb = Aabb {
+    min: Vec3::new(-30.0, -4.0, -8.0),
+    max: Vec3::new(-10.0, -1.0, 5.0),
+};
+
+pub fn hazard_zones() -> [zone::Zone; 3] {
+    [
+        zone::Zone::repeating(HAZARD_AFTER_ASCENT[0]),
+        zone::Zone::repeating(HAZARD_AFTER_ASCENT[1]),
+        zone::Zone::repeating(HAZARD_UNDER_PLATFORMS),
+    ]
 }
 
 #[derive(Clone, Copy)]
@@ -178,4 +302,45 @@ pub fn diagnostic_colliders() -> Vec<Aabb> {
         .chain(diagnostic_blocks())
         .map(StaticBox::bounds)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collision;
+
+    #[test]
+    fn hazard_zones_do_not_cover_start() {
+        let start = collision::player_bounds(START_POSITION).center();
+        for zone in hazard_zones() {
+            assert!(!zone.bounds.contains(start));
+        }
+    }
+
+    #[test]
+    fn hazard_strips_lie_on_upper_terrace() {
+        let terrace = UPPER_TERRACE.bounds();
+        for hazard in HAZARD_AFTER_ASCENT {
+            assert!(hazard.min.x >= terrace.min.x);
+            assert!(hazard.max.x <= terrace.max.x);
+            assert!(hazard.min.z >= terrace.min.z);
+            assert!(hazard.max.z <= terrace.max.z);
+            assert_eq!(hazard.min.y, terrace.max.y);
+            assert!(hazard.contains(Vec3::new(
+                hazard.center().x,
+                terrace.max.y,
+                hazard.center().z
+            )));
+        }
+        assert!(HAZARD_AFTER_ASCENT[1].max.x < HAZARD_AFTER_ASCENT[0].min.x);
+    }
+
+    #[test]
+    fn hazard_under_platforms_is_below_ascent() {
+        let lowest_top = ASCENT
+            .iter()
+            .map(|block| block.bounds().max.y)
+            .fold(f32::INFINITY, f32::min);
+        assert!(HAZARD_UNDER_PLATFORMS.max.y < lowest_top);
+    }
 }

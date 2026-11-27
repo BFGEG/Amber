@@ -1,0 +1,3 @@
+newmtl exit_prompt
+Kd 1 1 1
+map_Kd exit-prompt.png

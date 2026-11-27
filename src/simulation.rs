@@ -7,12 +7,30 @@ use crate::world::Aabb;
 
 const TURN_SMOOTHING: f32 = 10.0;
 const MOVE_SPEED: f32 = 7.0;
+const PRECISE_SPEED: f32 = 3.0;
 const GROUND_ACCELERATION: f32 = 40.0;
 const GROUND_BRAKING: f32 = 50.0;
 const AIR_ACCELERATION: f32 = 40.0;
 const GRAVITY: f32 = 24.0;
 const JUMP_SPEED: f32 = 8.0;
 pub const FALL_LIMIT: f32 = -10.0;
+
+/// Режим ограничения горизонтальной скорости.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SpeedMode {
+    #[default]
+    Normal,
+    Precise,
+}
+
+impl SpeedMode {
+    fn max_speed(self) -> f32 {
+        match self {
+            Self::Normal => MOVE_SPEED,
+            Self::Precise => PRECISE_SPEED,
+        }
+    }
+}
 
 /// Игровое положение персонажа независимо от узлов графической сцены.
 pub struct Player {
@@ -37,17 +55,22 @@ impl Player {
         }
     }
 
-    /// Возвращает в заранее проверенную безопасную точку после падения в пустоту.
-    pub fn respawn_if_fallen(&mut self, start: Vec3, obstacles: &[Aabb]) -> bool {
-        if self.position.y >= FALL_LIMIT {
-            return false;
-        }
-        *self = Self::new(start);
-        self.grounded = collision::has_support(start, obstacles);
-        true
+    pub fn is_below_fall_limit(&self) -> bool {
+        self.position.y < FALL_LIMIT
     }
 
-    fn update_horizontal_velocity(&mut self, input_direction: Vec3, dt: f32) {
+    /// Возвращает в заранее проверенную безопасную точку и сбрасывает движение.
+    pub fn respawn(&mut self, start: Vec3, obstacles: &[Aabb]) {
+        *self = Self::new(start);
+        self.grounded = collision::has_support(start, obstacles);
+    }
+
+    fn update_horizontal_velocity(
+        &mut self,
+        input_direction: Vec3,
+        speed_mode: SpeedMode,
+        dt: f32,
+    ) {
         let has_input = input_direction.length_squared() > 0.0;
         let rate = if self.grounded {
             if has_input {
@@ -61,7 +84,7 @@ impl Player {
             // В воздухе без ввода скорость сохраняется: дуга прыжка остаётся предсказуемой.
             0.0
         };
-        let target_velocity = input_direction * MOVE_SPEED;
+        let target_velocity = input_direction * speed_mode.max_speed();
         let velocity_delta = target_velocity - self.horizontal_velocity;
         let max_delta = rate * dt;
         if velocity_delta.length() > max_delta {
@@ -75,6 +98,7 @@ impl Player {
         &mut self,
         movement: Vec3,
         jump_pressed: bool,
+        speed_mode: SpeedMode,
         dt: f32,
         obstacles: &[Aabb],
     ) {
@@ -104,7 +128,7 @@ impl Player {
             let turn_blend = 1.0 - (-TURN_SMOOTHING * dt).exp();
             self.rotation = self.rotation.slerp(target_rotation, turn_blend);
         }
-        self.update_horizontal_velocity(input_direction, dt);
+        self.update_horizontal_velocity(input_direction, speed_mode, dt);
         let previous_position = self.position;
         self.position =
             collision::move_horizontal(self.position, self.horizontal_velocity * dt, obstacles);
@@ -177,8 +201,41 @@ impl FixedClock {
 mod tests {
     use super::*;
 
+    fn respawn_if_fallen(player: &mut Player, start: Vec3, obstacles: &[Aabb]) -> bool {
+        if !player.is_below_fall_limit() {
+            return false;
+        }
+        let recovery = crate::recovery::Recovery::new(crate::recovery::CheckpointPose {
+            position: start,
+            yaw: 0.0,
+            pitch: 0.0,
+        });
+        recovery.restore(
+            &mut crate::section::SectionState::new(None),
+            player,
+            obstacles,
+        );
+        true
+    }
+
     fn step(player: &mut Player, movement: Vec3, jump: bool, obstacles: &[Aabb]) {
-        player.fixed_update(movement, jump, FixedClock::STEP as f32, obstacles);
+        step_with_mode(player, movement, jump, SpeedMode::Normal, obstacles);
+    }
+
+    fn step_with_mode(
+        player: &mut Player,
+        movement: Vec3,
+        jump: bool,
+        speed_mode: SpeedMode,
+        obstacles: &[Aabb],
+    ) {
+        player.fixed_update(
+            movement,
+            jump,
+            speed_mode,
+            FixedClock::STEP as f32,
+            obstacles,
+        );
     }
 
     fn run_steps(
@@ -238,13 +295,17 @@ mod tests {
         assert!((player.position.y - bounds.max.y).abs() < 0.00001);
     }
 
-    fn travel_distance(seconds: f32) -> f32 {
-        let acceleration_time = MOVE_SPEED / GROUND_ACCELERATION;
+    fn travel_distance_for(speed: f32, seconds: f32) -> f32 {
+        let acceleration_time = speed / GROUND_ACCELERATION;
         if seconds <= acceleration_time {
             0.5 * GROUND_ACCELERATION * seconds * seconds
         } else {
-            0.5 * MOVE_SPEED * acceleration_time + MOVE_SPEED * (seconds - acceleration_time)
+            0.5 * speed * acceleration_time + speed * (seconds - acceleration_time)
         }
+    }
+
+    fn travel_distance(seconds: f32) -> f32 {
+        travel_distance_for(MOVE_SPEED, seconds)
     }
 
     #[test]
@@ -271,7 +332,7 @@ mod tests {
         let mut returned = false;
         for _ in 0..200 {
             step(&mut player, -Vec3::X, false, &obstacles);
-            if player.respawn_if_fallen(start, &obstacles) {
+            if respawn_if_fallen(&mut player, start, &obstacles) {
                 returned = true;
                 break;
             }
@@ -341,26 +402,55 @@ mod tests {
             player.horizontal_velocity = Vec3::X * MOVE_SPEED;
             player.vertical_velocity = -100.0;
             player.rotation = Quat::from_rotation_y(1.0);
-            assert!(player.respawn_if_fallen(start, &obstacles));
+            assert!(respawn_if_fallen(&mut player, start, &obstacles));
             assert_eq!(player.position, start);
             assert_eq!(player.rotation, Quat::IDENTITY);
             assert_eq!(player.horizontal_velocity, Vec3::ZERO);
             assert_eq!(player.vertical_velocity, 0.0);
             assert!(player.grounded);
             for _ in 0..600 {
-                player.fixed_update(Vec3::ZERO, false, FixedClock::STEP as f32, &obstacles);
-                assert!(!player.respawn_if_fallen(start, &obstacles));
+                player.fixed_update(
+                    Vec3::ZERO,
+                    false,
+                    SpeedMode::Normal,
+                    FixedClock::STEP as f32,
+                    &obstacles,
+                );
+                assert!(!respawn_if_fallen(&mut player, start, &obstacles));
                 assert_eq!(player.position, start);
             }
         }
     }
 
     #[test]
+    fn respawn_after_hazard_contact_resets_to_start() {
+        let obstacles = crate::world::course_colliders();
+        let mut player = Player::new(Vec3::new(-5.0, 0.0, 2.0));
+        player.horizontal_velocity = Vec3::X * MOVE_SPEED;
+        player.vertical_velocity = -8.0;
+        player.rotation = Quat::from_rotation_y(0.5);
+        player.grounded = true;
+
+        player.respawn(crate::world::START_POSITION, &obstacles);
+
+        assert_eq!(player.position, crate::world::START_POSITION);
+        assert_eq!(player.rotation, Quat::IDENTITY);
+        assert_eq!(player.horizontal_velocity, Vec3::ZERO);
+        assert_eq!(player.vertical_velocity, 0.0);
+        assert!(player.grounded);
+    }
+
+    #[test]
     fn return_waits_until_feet_are_below_fall_limit() {
         let mut player = Player::new(Vec3::Y * FALL_LIMIT);
-        assert!(!player.respawn_if_fallen(crate::world::START_POSITION, &[]));
+        assert!(!respawn_if_fallen(
+            &mut player,
+            crate::world::START_POSITION,
+            &[]
+        ));
         player.position.y -= 0.01;
-        assert!(player.respawn_if_fallen(
+        assert!(respawn_if_fallen(
+            &mut player,
             crate::world::START_POSITION,
             &crate::world::diagnostic_colliders()
         ));
@@ -387,7 +477,7 @@ mod tests {
         let obstacles = crate::world::diagnostic_colliders();
         let start = crate::world::START_POSITION;
         let mut player = Player::new(start);
-        let mut input = crate::input::JumpInput::default();
+        let mut input = crate::input::ButtonInput::default();
         for _ in 0..3 {
             player.position.z = crate::world::GROUND.bounds().min.z - 2.0;
             input.sample(true);
@@ -396,10 +486,11 @@ mod tests {
                 player.fixed_update(
                     Vec3::ZERO,
                     input.take(),
+                    SpeedMode::Normal,
                     FixedClock::STEP as f32,
                     &obstacles,
                 );
-                if player.respawn_if_fallen(start, &obstacles) {
+                if respawn_if_fallen(&mut player, start, &obstacles) {
                     input.pause(true);
                     returned = true;
                     break;
@@ -410,6 +501,7 @@ mod tests {
             player.fixed_update(
                 Vec3::ZERO,
                 input.take(),
+                SpeedMode::Normal,
                 FixedClock::STEP as f32,
                 &obstacles,
             );
@@ -419,6 +511,7 @@ mod tests {
             player.fixed_update(
                 Vec3::ZERO,
                 input.take(),
+                SpeedMode::Normal,
                 FixedClock::STEP as f32,
                 &obstacles,
             );
@@ -450,8 +543,14 @@ mod tests {
             let mut returns = 0;
             for _ in 0..fps * 3 {
                 for _ in 0..clock.advance(1.0 / fps as f32) {
-                    player.fixed_update(Vec3::ZERO, false, FixedClock::STEP as f32, &obstacles);
-                    if player.respawn_if_fallen(crate::world::START_POSITION, &obstacles) {
+                    player.fixed_update(
+                        Vec3::ZERO,
+                        false,
+                        SpeedMode::Normal,
+                        FixedClock::STEP as f32,
+                        &obstacles,
+                    );
+                    if respawn_if_fallen(&mut player, crate::world::START_POSITION, &obstacles) {
                         clock.clear_time();
                         returns += 1;
                         break;
@@ -469,10 +568,10 @@ mod tests {
         let obstacles = [crate::world::GROUND.bounds()];
         let mut player = Player::new(Vec3::ZERO);
         let dt = FixedClock::STEP as f32;
-        player.fixed_update(Vec3::ZERO, true, dt, &obstacles);
+        player.fixed_update(Vec3::ZERO, true, SpeedMode::Normal, dt, &obstacles);
         let velocity = player.vertical_velocity;
         assert!(velocity > 0.0);
-        player.fixed_update(Vec3::ZERO, true, dt, &obstacles);
+        player.fixed_update(Vec3::ZERO, true, SpeedMode::Normal, dt, &obstacles);
         assert!((player.vertical_velocity - (velocity - GRAVITY * dt)).abs() < 0.00001);
     }
 
@@ -480,12 +579,13 @@ mod tests {
     fn holding_space_lands_without_repeating_and_release_allows_jump() {
         let obstacles = [crate::world::GROUND.bounds()];
         let mut player = Player::new(Vec3::ZERO);
-        let mut input = crate::input::JumpInput::default();
+        let mut input = crate::input::ButtonInput::default();
         for _ in 0..180 {
             input.sample(true);
             player.fixed_update(
                 Vec3::ZERO,
                 input.take(),
+                SpeedMode::Normal,
                 FixedClock::STEP as f32,
                 &obstacles,
             );
@@ -497,6 +597,7 @@ mod tests {
         player.fixed_update(
             Vec3::ZERO,
             input.take(),
+            SpeedMode::Normal,
             FixedClock::STEP as f32,
             &obstacles,
         );
@@ -514,7 +615,13 @@ mod tests {
         let mut player = Player::new(Vec3::ZERO);
         let mut touched = false;
         for step in 0..120 {
-            player.fixed_update(Vec3::ZERO, step == 0, FixedClock::STEP as f32, &obstacles);
+            player.fixed_update(
+                Vec3::ZERO,
+                step == 0,
+                SpeedMode::Normal,
+                FixedClock::STEP as f32,
+                &obstacles,
+            );
             assert!(player.position.y + collision::PLAYER_HEIGHT <= 2.50001);
             if player.position.y == 2.5 - collision::PLAYER_HEIGHT {
                 touched = true;
@@ -541,7 +648,13 @@ mod tests {
             } else {
                 Vec3::ZERO
             };
-            player.fixed_update(movement, step == 0, FixedClock::STEP as f32, &obstacles);
+            player.fixed_update(
+                movement,
+                step == 0,
+                SpeedMode::Normal,
+                FixedClock::STEP as f32,
+                &obstacles,
+            );
         }
         assert!(player.position.x > 3.0);
         assert_eq!(player.position.y, 0.5);
@@ -567,7 +680,13 @@ mod tests {
             } else {
                 Vec3::ZERO
             };
-            player.fixed_update(movement, step == 0, FixedClock::STEP as f32, &obstacles);
+            player.fixed_update(
+                movement,
+                step == 0,
+                SpeedMode::Normal,
+                FixedClock::STEP as f32,
+                &obstacles,
+            );
         }
         assert!(player.position.x > 7.0);
         assert_eq!(player.position.y, 1.0);
@@ -580,7 +699,7 @@ mod tests {
         for fps in [30, 60, 144] {
             let mut player = Player::new(Vec3::ZERO);
             let mut clock = FixedClock::default();
-            let mut input = crate::input::JumpInput::default();
+            let mut input = crate::input::ButtonInput::default();
             let mut apex: f32 = 0.0;
             let mut landing = None;
             for _ in 0..fps * 2 {
@@ -589,6 +708,7 @@ mod tests {
                     player.fixed_update(
                         Vec3::X,
                         input.take(),
+                        SpeedMode::Normal,
                         FixedClock::STEP as f32,
                         &[crate::world::GROUND.bounds()],
                     );
@@ -613,7 +733,13 @@ mod tests {
         let obstacles = [crate::world::GROUND.bounds()];
         let mut player = Player::new(Vec3::new(0.0, 5.0, 0.0));
         for _ in 0..600 {
-            player.fixed_update(Vec3::ZERO, false, FixedClock::STEP as f32, &obstacles);
+            player.fixed_update(
+                Vec3::ZERO,
+                false,
+                SpeedMode::Normal,
+                FixedClock::STEP as f32,
+                &obstacles,
+            );
         }
         assert_eq!(player.position.y, 0.0);
         assert_eq!(player.vertical_velocity, 0.0);
@@ -651,7 +777,13 @@ mod tests {
         }));
         assert!(player.position.y < 2.0);
         for _ in 0..120 {
-            player.fixed_update(Vec3::ZERO, false, FixedClock::STEP as f32, &obstacles);
+            player.fixed_update(
+                Vec3::ZERO,
+                false,
+                SpeedMode::Normal,
+                FixedClock::STEP as f32,
+                &obstacles,
+            );
         }
         assert_eq!(player.position.y, 0.0);
         assert!(player.grounded);
@@ -668,22 +800,32 @@ mod tests {
         ];
         let mut player = Player::new(Vec3::ZERO);
         for _ in 0..120 {
-            player.fixed_update(Vec3::X, false, FixedClock::STEP as f32, &obstacles);
+            player.fixed_update(
+                Vec3::X,
+                false,
+                SpeedMode::Normal,
+                FixedClock::STEP as f32,
+                &obstacles,
+            );
         }
         assert_eq!(player.position.y, 0.0);
         assert!(player.grounded);
         assert!(player.position.x < 1.5);
     }
 
-    fn travel(fps: u32) -> Player {
+    fn travel_with_mode(fps: u32, speed_mode: SpeedMode) -> Player {
         let mut player = Player::new(Vec3::ZERO);
         let mut clock = FixedClock::default();
         for _ in 0..fps * 3 {
             for _ in 0..clock.advance(1.0 / fps as f32) {
-                player.fixed_update(Vec3::X, false, FixedClock::STEP as f32, &[]);
+                player.fixed_update(Vec3::X, false, speed_mode, FixedClock::STEP as f32, &[]);
             }
         }
         player
+    }
+
+    fn travel(fps: u32) -> Player {
+        travel_with_mode(fps, SpeedMode::Normal)
     }
 
     #[test]
@@ -701,6 +843,120 @@ mod tests {
     }
 
     #[test]
+    fn precise_mode_reaches_limited_speed_without_exceeding_it() {
+        let obstacles = [crate::world::GROUND.bounds()];
+        let mut player = Player::new(Vec3::ZERO);
+        for _ in 0..60 {
+            step_with_mode(&mut player, Vec3::X, false, SpeedMode::Precise, &obstacles);
+            assert!(player.horizontal_velocity.length() <= PRECISE_SPEED + 0.00001);
+        }
+        assert!((player.horizontal_velocity.length() - PRECISE_SPEED).abs() < 0.00001);
+    }
+
+    #[test]
+    fn precise_mode_matches_at_different_render_rates() {
+        let expected = travel_distance_for(PRECISE_SPEED, 3.0);
+        let mut reference: Option<f32> = None;
+        for fps in [30, 60, 144] {
+            let distance = travel_with_mode(fps, SpeedMode::Precise).position.x;
+            assert!((distance - expected).abs() < 0.1);
+            if let Some(previous) = reference {
+                assert!((distance - previous).abs() < 0.00001);
+            }
+            reference = Some(distance);
+        }
+    }
+
+    #[test]
+    fn switching_to_precise_mode_slows_and_release_restores_normal_speed() {
+        let obstacles = [crate::world::GROUND.bounds()];
+        let mut player = Player::new(Vec3::ZERO);
+        run_steps(&mut player, Vec3::X, 60, false, &obstacles);
+        assert!((player.horizontal_velocity.length() - MOVE_SPEED).abs() < 0.00001);
+
+        for _ in 0..60 {
+            step_with_mode(&mut player, Vec3::X, false, SpeedMode::Precise, &obstacles);
+        }
+        assert!((player.horizontal_velocity.length() - PRECISE_SPEED).abs() < 0.0001);
+
+        for _ in 0..60 {
+            step(&mut player, Vec3::X, false, &obstacles);
+        }
+        assert!((player.horizontal_velocity.length() - MOVE_SPEED).abs() < 0.0001);
+    }
+
+    #[test]
+    fn precise_mode_can_stop_at_platform_edge_without_falling() {
+        let platform = Aabb {
+            min: Vec3::new(-10.0, -1.0, -2.0),
+            max: Vec3::new(10.0, 0.0, 2.0),
+        };
+        let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
+        let obstacles = [platform];
+        let mut player = Player::new(Vec3::new(5.0, 0.0, 0.0));
+        for _ in 0..200 {
+            step_with_mode(&mut player, Vec3::X, false, SpeedMode::Precise, &obstacles);
+            if player.position.x >= 9.2 {
+                break;
+            }
+        }
+        assert!(player.position.x >= 9.2);
+        for _ in 0..60 {
+            step_with_mode(
+                &mut player,
+                Vec3::ZERO,
+                false,
+                SpeedMode::Precise,
+                &obstacles,
+            );
+        }
+        assert!(player.grounded);
+        assert_eq!(player.position.y, 0.0);
+        assert!(player.position.x <= 10.0 - foot + 0.00001);
+        assert!(player.horizontal_velocity.length() < 0.00001);
+    }
+
+    #[test]
+    fn precise_mode_turns_within_a_narrow_platform() {
+        let platform = Aabb {
+            min: Vec3::new(-2.0, -1.0, -2.0),
+            max: Vec3::new(2.0, 0.0, 2.0),
+        };
+        let foot = crate::collision::FOOT_SUPPORT_HALF_WIDTH;
+        let obstacles = [platform];
+        let mut player = Player::new(Vec3::ZERO);
+        for _ in 0..20 {
+            step_with_mode(&mut player, Vec3::X, false, SpeedMode::Precise, &obstacles);
+        }
+        for _ in 0..20 {
+            step_with_mode(&mut player, Vec3::Z, false, SpeedMode::Precise, &obstacles);
+        }
+        assert!(player.grounded);
+        assert!(player.position.x.abs() <= 2.0 - foot);
+        assert!(player.position.z.abs() <= 2.0 - foot);
+        assert!(player.horizontal_velocity.z > 2.0);
+        assert!(player.horizontal_velocity.x.abs() < 0.5);
+    }
+
+    #[test]
+    fn precise_jump_has_shorter_range() {
+        let obstacles = [crate::world::GROUND.bounds()];
+        let mut player = Player::new(Vec3::ZERO);
+        for _ in 0..60 {
+            step_with_mode(&mut player, Vec3::X, false, SpeedMode::Precise, &obstacles);
+        }
+        let takeoff_x = player.position.x;
+        step_with_mode(&mut player, Vec3::X, true, SpeedMode::Precise, &obstacles);
+        let mut steps = 0;
+        while !player.grounded && steps < 120 {
+            step_with_mode(&mut player, Vec3::X, false, SpeedMode::Precise, &obstacles);
+            steps += 1;
+        }
+        assert!(player.grounded);
+        assert!((player.position.x - takeoff_x - 2.0).abs() < 0.2);
+    }
+
+    #[test]
     fn focus_pause_freezes_player_and_discards_partial_step() {
         let mut clock = FixedClock::default();
         let mut player = Player::new(Vec3::ZERO);
@@ -708,7 +964,13 @@ mod tests {
         assert_eq!(clock.frame_steps(0.01, true), Some(0));
         for (dt, focused) in [(0.02, false), (10.0, false), (0.2, true)] {
             for _ in 0..clock.frame_steps(dt, focused).unwrap_or(0) {
-                player.fixed_update(Vec3::X, false, FixedClock::STEP as f32, &[]);
+                player.fixed_update(
+                    Vec3::X,
+                    false,
+                    SpeedMode::Normal,
+                    FixedClock::STEP as f32,
+                    &[],
+                );
             }
             assert_eq!(player.position, Vec3::ZERO);
             assert_eq!(player.rotation, Quat::IDENTITY);
@@ -734,6 +996,7 @@ mod tests {
                     player.fixed_update(
                         Vec3::X + Vec3::Z,
                         false,
+                        SpeedMode::Normal,
                         FixedClock::STEP as f32,
                         &obstacles,
                     );
@@ -750,8 +1013,20 @@ mod tests {
     fn diagonal_does_not_increase_speed() {
         let mut straight = Player::new(Vec3::ZERO);
         let mut diagonal = Player::new(Vec3::ZERO);
-        straight.fixed_update(Vec3::X, false, FixedClock::STEP as f32, &[]);
-        diagonal.fixed_update(Vec3::X + Vec3::Z, false, FixedClock::STEP as f32, &[]);
+        straight.fixed_update(
+            Vec3::X,
+            false,
+            SpeedMode::Normal,
+            FixedClock::STEP as f32,
+            &[],
+        );
+        diagonal.fixed_update(
+            Vec3::X + Vec3::Z,
+            false,
+            SpeedMode::Normal,
+            FixedClock::STEP as f32,
+            &[],
+        );
         assert!((straight.position.length() - diagonal.position.length()).abs() < 0.00001);
     }
 
@@ -940,7 +1215,7 @@ mod tests {
     fn held_space_does_not_repeat_after_a_moving_landing() {
         let obstacles = [crate::world::GROUND.bounds()];
         let mut player = Player::new(Vec3::ZERO);
-        let mut input = crate::input::JumpInput::default();
+        let mut input = crate::input::ButtonInput::default();
         run_steps(&mut player, Vec3::X, 20, false, &obstacles);
         input.sample(true);
         step(&mut player, Vec3::X, input.take(), &obstacles);
