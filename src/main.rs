@@ -211,7 +211,8 @@ fn build_scene(
     visuals.activate(engine.scene(), &state, debug_visible)?;
     let pause_card = engine.load_model(Path::new(pause_scene::CARD_MODEL), root)?;
     let hover_card = engine.load_model(Path::new(pause_scene::HOVER_MODEL), root)?;
-    let mut pause_overlay = pause_scene::PauseOverlay::new(engine.scene(), [pause_card, hover_card])?;
+    let mut pause_overlay =
+        pause_scene::PauseOverlay::new(engine.scene(), [pause_card, hover_card])?;
     engine.scene().remove_object(cube)?;
 
     engine.scene().set_lighting(SceneLighting {
