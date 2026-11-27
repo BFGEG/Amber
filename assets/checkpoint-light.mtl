@@ -1,0 +1,4 @@
+newmtl checkpoint_light
+Kd 1 1 1
+d 0.65
+map_Kd checkpoint-fade.png

@@ -24,6 +24,7 @@ const CORWIN_WEAPONS: &str = concat!(env!("OUT_DIR"), "/corwin-weapons.obj");
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
 const TERRACE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/terrace.obj");
+const CHECKPOINT_LIGHT: &str = concat!(env!("OUT_DIR"), "/checkpoint-light.obj");
 const INITIAL_DIRECTION: Vec3 = Vec3::new(-1.0, -0.46, 0.0);
 const TIMING_DIRECTION: Vec3 = Vec3::X;
 const MOUSE_SENSITIVITY: f32 = 0.002;
@@ -92,10 +93,12 @@ fn build_scene(
     let mut checkpoint_visuals = if physics_demo {
         None
     } else {
+        let light = engine.load_model(Path::new(CHECKPOINT_LIGHT), root)?;
         Some(zone_scene::add_checkpoint_visuals(
             engine.scene(),
             root,
             cube,
+            light,
             world::CHECKPOINT_ZONE,
         )?)
     };

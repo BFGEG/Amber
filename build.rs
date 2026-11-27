@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let assets = Path::new("assets");
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("Cargo не задал OUT_DIR")?);
     // BFGE читает обычный OBJ. Распаковываем модели один раз при сборке.
-    for name in ["corwin", "corwin-weapons"] {
+    for name in ["corwin", "corwin-weapons", "checkpoint-light"] {
         let model = assets.join(format!("{name}.obj.gz"));
         println!("cargo:rerun-if-changed={}", model.display());
         let mut source = GzDecoder::new(BufReader::new(File::open(model)?));
@@ -20,6 +20,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     for name in [
+        "checkpoint-light.mtl",
+        "checkpoint-fade.png",
         "corwin.mtl",
         "corwin-palette.png",
         "corwin-weapons.mtl",

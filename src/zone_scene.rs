@@ -1,4 +1,4 @@
-use bfge::math::Vec3;
+use bfge::math::{Quat, Vec3};
 use bfge::{SceneApi, SceneError, SceneNodeId, SceneObjectId, Transform};
 
 use crate::collider_debug;
@@ -12,7 +12,7 @@ const ACTIVE_COLOR: [f32; 3] = [0.2, 1.4, 0.25];
 const HAZARD_COLOR: [f32; 3] = [1.8, 0.08, 0.03];
 const HAZARD_DARK_COLOR: [f32; 3] = [0.45, 0.015, 0.01];
 const HAZARD_END_COLOR: [f32; 3] = [1.8, 1.2, 0.08];
-const CHECKPOINT_ACTIVE_COLOR: [f32; 3] = [0.08, 1.3, 0.8];
+const CHECKPOINT_ACTIVE_COLOR: [f32; 3] = [0.08, 0.65, 0.4];
 const HAZARD_ALERT_COLOR: [f32; 3] = [2.0, 1.2, 0.15];
 const MARKER_SIZE: f32 = 0.36;
 const MARKER_HEIGHT: f32 = 1.1;
@@ -39,6 +39,7 @@ pub struct HazardVisuals {
 
 pub struct CheckpointVisuals {
     objects: Vec<SceneObjectId>,
+    light: SceneObjectId,
     active: bool,
 }
 
@@ -68,48 +69,39 @@ pub fn add_checkpoint_visuals(
     scene: &mut dyn SceneApi,
     root: SceneNodeId,
     cube: SceneObjectId,
+    light: SceneObjectId,
     bounds: Aabb,
 ) -> Result<CheckpointVisuals, SceneError> {
-    let center = bounds.center();
-    let floor = bounds.min.y;
-    let width = bounds.size().z;
+    let center = Vec3::new(bounds.center().x, bounds.min.y + 0.015, bounds.center().z);
+    let node = scene.create_node(root)?;
+    scene.set_node_transform(node, Transform::from_translation(center))?;
+    scene.reparent_object(light, node)?;
+    scene.set_object_color(light, IDLE_COLOR)?;
     let mut objects = Vec::new();
-    for z in [bounds.min.z + 0.14, bounds.max.z - 0.14] {
-        objects.push(add_box(
-            scene,
-            root,
-            cube,
-            Vec3::new(center.x, floor + 1.3, z),
-            Vec3::new(0.28, 2.6, 0.28),
-            IDLE_COLOR,
-        )?);
+    const SEGMENTS: usize = 48;
+    const RADIUS: f32 = 1.05;
+    for index in 0..SEGMENTS {
+        let angle = std::f32::consts::TAU * index as f32 / SEGMENTS as f32;
+        let node = scene.create_node(root)?;
+        scene.set_node_transform(
+            node,
+            Transform {
+                translation: center + Vec3::new(RADIUS * angle.cos(), 0.0, RADIUS * angle.sin()),
+                rotation: Quat::from_rotation_y(-angle),
+                scale: Vec3::new(
+                    0.065,
+                    0.025,
+                    std::f32::consts::TAU * RADIUS / SEGMENTS as f32 * 1.03,
+                ),
+            },
+        )?;
+        let object = scene.clone_object(cube, node)?;
+        scene.set_object_color(object, IDLE_COLOR)?;
+        objects.push(object);
     }
-    objects.push(add_box(
-        scene,
-        root,
-        cube,
-        Vec3::new(center.x, floor + 2.6, center.z),
-        Vec3::new(0.28, 0.28, width),
-        IDLE_COLOR,
-    )?);
-    objects.push(add_box(
-        scene,
-        root,
-        cube,
-        Vec3::new(center.x, floor + 1.3, center.z),
-        Vec3::splat(0.4),
-        IDLE_COLOR,
-    )?);
-    objects.push(add_box(
-        scene,
-        root,
-        cube,
-        Vec3::new(center.x, floor + 0.015, center.z),
-        Vec3::new(bounds.size().x, 0.03, width),
-        IDLE_COLOR,
-    )?);
     Ok(CheckpointVisuals {
         objects,
+        light,
         active: false,
     })
 }
@@ -120,6 +112,7 @@ impl CheckpointVisuals {
             for object in &self.objects {
                 scene.set_object_color(*object, CHECKPOINT_ACTIVE_COLOR)?;
             }
+            scene.set_object_visible(self.light, false)?;
             self.active = true;
         }
         Ok(())
