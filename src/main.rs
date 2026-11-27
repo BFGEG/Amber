@@ -32,6 +32,7 @@ const CORWIN_WEAPONS: &str = concat!(env!("OUT_DIR"), "/corwin-weapons.obj");
 const CUBE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cube.obj");
 const GROUND_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ground.obj");
 const TERRACE_MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/terrace.obj");
+const CHECKPOINT_LIGHT: &str = concat!(env!("OUT_DIR"), "/checkpoint-light.obj");
 const MOUSE_SENSITIVITY: f32 = 0.002;
 const HAZARD_HOLD_SECONDS: f32 = 0.15;
 
@@ -93,10 +94,12 @@ fn build_scene(
     let checkpoint_visuals = if physics_demo {
         None
     } else {
+        let light = engine.load_model(Path::new(CHECKPOINT_LIGHT), root)?;
         Some(zone_scene::add_checkpoint_visuals(
             engine.scene(),
             root,
             cube,
+            light,
             world::CHECKPOINT_ZONE,
         )?)
     };
@@ -195,7 +198,10 @@ fn build_scene(
     };
     visuals.activate(engine.scene(), &state, debug_visible)?;
     let pause_card = engine.load_model(Path::new(pause_scene::CARD_MODEL), root)?;
-    let mut pause_overlay = pause_scene::PauseOverlay::new(engine.scene(), pause_card)?;
+    let hover_card = engine.load_model(Path::new(pause_scene::HOVER_MODEL), root)?;
+    let pause_cursor = engine.load_model(Path::new(pause_scene::CURSOR_MODEL), root)?;
+    let mut pause_overlay =
+        pause_scene::PauseOverlay::new(engine.scene(), [pause_card, hover_card], pause_cursor)?;
     engine.scene().remove_object(cube)?;
 
     engine.scene().set_lighting(SceneLighting {
@@ -256,7 +262,10 @@ fn build_scene(
             }
             let was_paused = state.pause.is_paused();
             let steps = state.pause.frame_steps(&mut state.clock, time.time_since_last_frame, focused, escape_held);
-            pause_overlay.synchronize(context.scene(), state.pause.is_paused())?;
+            if pause_overlay.interact(context, state.pause.is_paused())? {
+                context.request_exit();
+                return Ok(());
+            }
             if was_paused && !state.pause.is_paused() && state.player.grounded {
                 // Отпущенное на паузе направление не должно оставлять инерцию на земле.
                 state.player.horizontal_velocity = Vec3::ZERO;
@@ -475,15 +484,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let physics_demo = devtools::physics_demo_enabled()? || timing_demo;
     let mut engine = Engine::new();
     engine.initialize(WindowDescriptor::new("Amber — тестовая сцена", 1280, 720))?;
-    engine.hide_cursor()?;
-    let result = build_scene(
-        &mut engine,
-        timing_demo,
-        physics_demo,
-        debug_visible,
-        limiter,
-    )
-    .and_then(|()| engine.run().map_err(Into::into));
+    let result = engine
+        .hide_cursor()
+        .map_err(Into::into)
+        .and_then(|()| {
+            build_scene(
+                &mut engine,
+                timing_demo,
+                physics_demo,
+                debug_visible,
+                limiter,
+            )
+        })
+        .and_then(|()| engine.run().map_err(Into::into));
     let shutdown = engine.shutdown();
     result?;
     shutdown?;

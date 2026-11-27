@@ -1,0 +1,3 @@
+newmtl pause_card
+Kd 1 1 1
+map_Kd pause-card-hover.png
