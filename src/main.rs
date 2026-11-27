@@ -198,7 +198,9 @@ fn build_scene(
         engine.scene().set_object_visible(*object, debug_visible)?;
     }
     let pause_card = engine.load_model(Path::new(pause_scene::CARD_MODEL), root)?;
-    let mut pause_overlay = pause_scene::PauseOverlay::new(engine.scene(), pause_card)?;
+    let hover_card = engine.load_model(Path::new(pause_scene::HOVER_MODEL), root)?;
+    let mut pause_overlay =
+        pause_scene::PauseOverlay::new(engine.scene(), [pause_card, hover_card])?;
     engine.scene().remove_object(cube)?;
     let mut debug_pressed = false;
 
@@ -260,7 +262,10 @@ fn build_scene(
             let escape_held = context.input().is_key_pressed(KeyCode::Escape);
             let was_paused = pause.is_paused();
             let steps = pause.frame_steps(&mut clock, time.time_since_last_frame, focused, escape_held);
-            pause_overlay.synchronize(context.scene(), pause.is_paused())?;
+            if pause_overlay.interact(context, pause.is_paused())? {
+                context.request_exit();
+                return Ok(());
+            }
             if was_paused && !pause.is_paused() && player.grounded {
                 // Отпущенное на паузе направление не должно оставлять инерцию на земле.
                 player.horizontal_velocity = Vec3::ZERO;
