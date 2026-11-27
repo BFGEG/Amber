@@ -42,6 +42,7 @@ pub struct CheckpointVisuals {
     objects: Vec<SceneObjectId>,
     light: SceneObjectId,
     active: bool,
+    visible: bool,
 }
 
 fn add_box(
@@ -104,11 +105,18 @@ pub fn add_checkpoint_visuals(
         objects,
         light,
         active: false,
+        visible: true,
     })
 }
 
 impl CheckpointVisuals {
-    pub fn set_visible(&self, scene: &mut dyn SceneApi, visible: bool) -> Result<(), SceneError> {
+    pub fn set_visible(
+        &mut self,
+        scene: &mut dyn SceneApi,
+        visible: bool,
+    ) -> Result<(), SceneError> {
+        self.visible = visible;
+        scene.set_object_visible(self.light, visible && !self.active)?;
         for object in &self.objects {
             scene.set_object_visible(*object, visible)?;
         }
@@ -120,6 +128,7 @@ impl CheckpointVisuals {
             scene.set_object_color(*object, IDLE_COLOR)?;
         }
         self.active = false;
+        scene.set_object_visible(self.light, self.visible)?;
         Ok(())
     }
 
